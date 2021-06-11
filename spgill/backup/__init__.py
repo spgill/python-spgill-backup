@@ -23,7 +23,7 @@ from spgill.backup import helper, command, config as applicationConfig
     "--config",
     "-c",
     type=str,
-    help="""Path to backup config file. Defaults to '~/.spgill.tools.backup.json'.""",
+    help="""Path to backup config file. Defaults to '~/.spgill.backup.yaml'.""",
 )
 def cli(ctx, config):
     # Initialize colorama (for windows)
