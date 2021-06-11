@@ -38,13 +38,12 @@ def requirementsFile(name=None):
 
 
 setuptools.setup(
-    name="python-backup",
+    name="python-spgill-backup",
     version=version(),
-    description="Python-based CLI for simpler automation of Restic backups",
     long_description=readme(),
     author="Samuel P. Gillispie II",
     author_email="samuel@spgill.me",
-    url="https://github.com/spgill/spgill-backup",
+    url="https://github.com/spgill/python-spgill-backup",
     license="MIT",
     packages=setuptools.find_packages(),
     include_package_data=True,
