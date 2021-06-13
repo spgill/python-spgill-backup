@@ -14,7 +14,7 @@ import colorama
 from colorama import Fore, Style
 
 # Local imports
-from spgill.backup import helper, command, config as applicationConfig
+from . import helper, command, config as applicationConfig
 
 
 @click.group()

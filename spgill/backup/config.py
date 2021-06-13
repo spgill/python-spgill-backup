@@ -1,10 +1,12 @@
 # Stdlib imports
 import os
 import pathlib
-from spgill.backup import helper
 
 # Vendor imports
 import yaml
+
+# Local imports
+from . import helper
 
 _defaultConfig = {"v": 1, "profiles": {}}
 

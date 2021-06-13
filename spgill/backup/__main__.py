@@ -1,4 +1,4 @@
-import spgill.backup
+from spgill.backup import cli
 
 if __name__ == "__main__":
-    spgill.backup.cli()
+    cli()
