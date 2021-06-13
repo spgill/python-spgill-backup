@@ -45,7 +45,7 @@ setuptools.setup(
     author_email="samuel@spgill.me",
     url="https://github.com/spgill/python-spgill-backup",
     license="MIT",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_namespace_packages(include=["spgill.*"]),
     include_package_data=True,
     install_requires=requirementsFile(),
     entry_points={
