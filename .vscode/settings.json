@@ -7,5 +7,22 @@
   },
   "python.linting.flake8Enabled": true,
   "python.linting.pylintEnabled": false,
-  "python.linting.enabled": true
+"python.linting.enabled": true,
+"workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#6ccbb6",
+    "activityBar.activeBorder": "#ad5ac5",
+    "activityBar.background": "#6ccbb6",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#ad5ac5",
+    "activityBarBadge.foreground": "#e7e7e7",
+    "statusBar.background": "#46bea3",
+    "statusBar.foreground": "#15202b",
+    "statusBarItem.hoverBackground": "#369b84",
+    "titleBar.activeBackground": "#46bea3",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#46bea399",
+    "titleBar.inactiveForeground": "#15202b99"
+},
+"peacock.color": "#46bea3"
 }
