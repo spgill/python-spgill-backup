@@ -36,7 +36,7 @@ def loadConfigValues(configPath: str = None) -> dict:
             updateFile = True
         elif values["v"] < _defaultConfig["v"]:
             helper.printWarning(
-                f'Warning: Config file at "{filePath}" is possibly incompatible with this version of the backup tool. Delete the "v" property to suppress this warning.'
+                f'Warning: Config file at "{filePath}" is possibly incompatible with this version of the backup tool. Delete the "v" property in the config file to suppress this warning.'
             )
 
     # If the config file needs to be updated, do it now
