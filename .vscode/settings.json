@@ -7,8 +7,8 @@
   },
   "python.linting.flake8Enabled": true,
   "python.linting.pylintEnabled": false,
-"python.linting.enabled": true,
-"workbench.colorCustomizations": {
+  "python.linting.enabled": true,
+  "workbench.colorCustomizations": {
     "activityBar.activeBackground": "#6ccbb6",
     "activityBar.activeBorder": "#ad5ac5",
     "activityBar.background": "#6ccbb6",
@@ -22,7 +22,14 @@
     "titleBar.activeBackground": "#46bea3",
     "titleBar.activeForeground": "#15202b",
     "titleBar.inactiveBackground": "#46bea399",
-    "titleBar.inactiveForeground": "#15202b99"
-},
-"peacock.color": "#46bea3"
+    "titleBar.inactiveForeground": "#15202b99",
+    "editorGroup.border": "#6ccbb6",
+    "panel.border": "#6ccbb6",
+    "sash.hoverBorder": "#6ccbb6",
+    "sideBar.border": "#6ccbb6",
+    "statusBarItem.remoteBackground": "#46bea3",
+    "statusBarItem.remoteForeground": "#15202b"
+  },
+  "peacock.color": "#46bea3",
+  "peacock.remoteColor": "46bea3"
 }
