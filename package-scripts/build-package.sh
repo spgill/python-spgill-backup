@@ -15,11 +15,15 @@ if [[ -z "$BUILD_ENV" ]]; then
 ######## This block executes inside the docker container ########
 else
     echo "-------------------------------- BEGINNING BUILD..."
+    # Install build essentials
+    apt update
+    apt -y install --no-install-recommends build-essential libffi-dev
+
     # Build python distribution package
-    pip install twine
-    python setup.py sdist
+    pip install twine build
+    python -m build
 
     # Upload built package to the repo
-    twine upload --config-file .pypirc --repository spgill dist/*
+    twine upload --config-file .pypirc --repository spgill dist/*.whl
     echo "-------------------------------- DONE!"
 fi
