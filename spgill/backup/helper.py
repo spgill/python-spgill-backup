@@ -4,6 +4,7 @@ import sys
 
 # Vendor imports
 from colorama import Fore, Style
+import humanize
 
 
 def fixTimestamp(t: str) -> str:
@@ -35,12 +36,8 @@ def printKeyVal(key: str, value: str):
     print(f"{Fore.YELLOW}{key}{Style.RESET_ALL}: {value}")
 
 
-def humanReadable(num, suffix="B"):
-    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f%s%s" % (num, "Yi", suffix)
+def humanReadable(num):
+    return humanize.naturalsize(num, binary=True)
 
 
 def getProfileData(config: dict, profileName: str) -> dict:
