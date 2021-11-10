@@ -1,8 +1,5 @@
-# On windows, sh will install but will be nonfunctional
-try:
-    import sh
-except ImportError:
-    sh = None
+import sh
 
-openSsl = sh.Command("openssl") if sh else None
-zStd = sh.Command("zstd") if sh else None
+openSsl = sh.Command("openssl")
+restic = sh.Command("restic")
+zStd = sh.Command("zstd")
