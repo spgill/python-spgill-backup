@@ -29,7 +29,7 @@
     "sideBar.border": "#6ccbb6",
     "statusBarItem.remoteBackground": "#46bea3",
     "statusBarItem.remoteForeground": "#15202b"
-  },
+},
   "peacock.color": "#46bea3",
   "peacock.remoteColor": "46bea3"
 }
