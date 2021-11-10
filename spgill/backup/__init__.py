@@ -5,7 +5,6 @@ import json
 import pathlib
 import shlex
 import shutil
-import subprocess
 import sys
 
 # Vendor imports
@@ -44,25 +43,13 @@ def cli(ctx, config):
 )
 @click.pass_obj
 @click.option(
-    "--ionice",
-    "-i",
-    is_flag=True,
-    help="""With this flag, the restic backup command will be wrapped with the ionice util to ease disk i/o utilization.""",
-)
-@click.option(
-    "--nice",
-    "-n",
-    is_flag=True,
-    help="""With this flag, the retic backup command will be wrapped with the nice util to ease processor utilization.""",
-)
-@click.option(
     "--go",
     "-g",
     is_flag=True,
     help="""By default, this command runs in 'dry run' mode. This flag is necessary to actually execute the backup.""",
 )
 @click.argument("profile", type=str, required=True)
-def cli_run(obj, ionice, nice, go, profile):
+def cli_run(obj, go, profile):
     profileData = helper.getProfileData(obj, profile)
 
     # Get the repo's data
@@ -84,19 +71,8 @@ def cli_run(obj, ionice, nice, go, profile):
         include += groups[groupName].get("include", [])
         exclude += groups[groupName].get("exclude", [])
 
-    # Contruct the initial arguments for the command
-    args = []
-
-    # If ionice flag is given, add ionice initiator
-    if ionice:
-        args += ["ionice", "-c", "3"]
-
-    # If nice is given, add nice initiator
-    if nice:
-        args += ["nice", "-10"]
-
-    # Add the complete restic arguments
-    args += [
+    # Construct the restic args
+    args = [
         *helper.getBaseResticsArgs(obj, profileData),
         "backup",
         *itertools.chain(
@@ -109,7 +85,9 @@ def cli_run(obj, ionice, nice, go, profile):
 
     # If this is the real deal, execute the backup
     if go:
-        subprocess.run(args)
+        command.restic(
+            args, _env=helper.getResticEnv(obj, profileData), _fg=True
+        )
 
     # If in preview mode, just print the joined args
     else:
@@ -128,14 +106,16 @@ def cli_run(obj, ionice, nice, go, profile):
 @click.argument("profile", type=str, required=True)
 @click.argument("restic_args", nargs=-1, type=click.UNPROCESSED)
 def cli_restic(obj, profile, restic_args):
+    profileData = helper.getProfileData(obj, profile)
+
     # Compile everything, with unprocessed args, into a list
     args = [
-        *helper.getBaseResticsArgs(obj, helper.getProfileData(obj, profile)),
+        *helper.getBaseResticsArgs(obj, profileData),
         *restic_args,
     ]
 
     # Execute the command
-    subprocess.run(args)
+    command.restic(args, _env=helper.getResticEnv(obj, profileData), _fg=True)
 
 
 @cli.command(
@@ -146,7 +126,15 @@ def cli_restic(obj, profile, restic_args):
 @click.argument("profile", type=str, required=True)
 def cli_command(obj, profile):
     profileData = helper.getProfileData(obj, profile)
-    sys.stdout.write(shlex.join(helper.getBaseResticsArgs(obj, profileData)))
+
+    if profileData["repo"].startswith("s3"):
+        helper.printWarning(
+            "Warning: S3 repos require credential environment variables be set before command execution!"
+        )
+
+    sys.stdout.write(
+        shlex.join(["restic", *helper.getBaseResticsArgs(obj, profileData)])
+    )
 
 
 @cli.command(
@@ -175,6 +163,7 @@ def cli_dump(obj, destination, profile, snapshots):
 
     # Reusable base args for following commands
     repoArgs = helper.getBaseResticsArgs(obj, profileData)
+    repoEnv = helper.getResticEnv(obj, profileData)
 
     dumpDestDir = pathlib.Path(destination).expanduser()
     if not dumpDestDir.exists():
@@ -208,11 +197,11 @@ def cli_dump(obj, destination, profile, snapshots):
 
         # Fetch information on the latest snapshot
         helper.printNestedLine(f"Querying snapshots for '{snapshotName}'...")
-        snapsArgs = [*repoArgs, "snapshots", snapshotName, "--json"]
-        snapsProc = subprocess.run(snapsArgs, capture_output=True)
-        if b"null" in snapsProc.stdout:
+        snapsArgs = [*repoArgs, "--quiet", "snapshots", snapshotName, "--json"]
+        snapsCommand = command.restic(snapsArgs, _env=repoEnv)
+        if b"null" in snapsCommand.stdout:
             helper.printError(f"Could not find snapshot: '{snapshotName}'")
-        latest = json.loads(snapsProc.stdout)[0]
+        latest = json.loads(snapsCommand.stdout)[0]
 
         # Convert the timestamp to a datetime object
         # Requires the we first round off the milliseconds to three decimal places
@@ -244,9 +233,9 @@ def cli_dump(obj, destination, profile, snapshots):
 
         # Fetch the size of the latest snapshot
         helper.printNestedLine("Querying snapshot size...")
-        statsArgs = [*repoArgs, "stats", latest["id"], "--json"]
-        statsProc = subprocess.run(statsArgs, capture_output=True)
-        latestSize = json.loads(statsProc.stdout)["total_size"]
+        statsArgs = [*repoArgs, "--quiet", "stats", latest["id"], "--json"]
+        statsCommand = command.restic(statsArgs, _env=repoEnv)
+        latestSize = json.loads(statsCommand.stdout)["total_size"]
         helper.printNestedLine(
             f"Archive should be no larger than (approx.) {helper.humanReadable(latestSize)}"
         )
@@ -269,57 +258,57 @@ def cli_dump(obj, destination, profile, snapshots):
         helper.printNestedLine(
             "Creating archive... (compression and encryption enabled)"
         )
-        dumpCmd = (
-            " | ".join(
-                [
-                    shlex.join([*repoArgs, "dump", latest["id"], "/"]),
-                    shlex.join(["pv", "-pterbs", str(latestSize)]),
-                    shlex.join(["zstd", "-c", "-T8"]),
-                    shlex.join(
-                        [
-                            "openssl",
-                            "enc",
-                            "-aes-256-cbc",
-                            "-md",
-                            "sha512",
-                            "-pbkdf2",
-                            "-iter",
-                            "100000",
-                            "-pass",
-                            f"file:{dumpPasswordFile}",
-                            "-e",
-                        ]
+        print("Dumping to", dumpCacheFile)
+        dumpCommand = command.openSsl(
+            command.zStd(
+                command.pv(
+                    command.restic(
+                        *[*repoArgs, "dump", latest["id"], "/"],
+                        _env=repoEnv,
+                        _piped=True,
                     ),
-                ]
-            )
-            + " > "
-            + shlex.join([str(dumpCacheFile)])
+                    *["-pterbs", str(latestSize)],
+                    _err=sys.stderr,
+                    _piped=True,
+                ),
+                *["-c", "-T8"],
+                _piped=True,
+            ),
+            *[
+                "enc",
+                "-aes-256-cbc",
+                "-md",
+                "sha512",
+                "-pbkdf2",
+                "-iter",
+                "100000",
+                "-pass",
+                f"file:{dumpPasswordFile}",
+                "-e",
+            ],
+            _out=str(dumpCacheFile),
         )
-        dumpProc = subprocess.run(dumpCmd, shell=True)
 
         # Detect dump errors
-        if dumpProc.returncode != 0:
+        if dumpCommand.exit_code != 0:
             helper.printError(
-                f"Dump command returned with error code {dumpProc.returncode}. Aborting."
+                f"Dump command returned with error code {dumpCommand.exit_code}. Aborting."
             )
 
         # Copy the dump archive to the destination, if cache was enabled
         if cacheEnabled:
             helper.printNestedLine("Moving archive to final destination...")
             dumpSize = dumpCacheFile.stat().st_size
-            copyCmd = (
-                shlex.join(
-                    ["pv", "-pterbs", str(dumpSize), str(dumpCacheFile)]
-                )
-                + " > "
-                + shlex.join([str(dumpDestFile)])
+            copyCommand = command.pv(
+                *["-pterbs", dumpSize, dumpCacheFile],
+                _out=str(dumpDestFile),
+                _err=sys.stderr,
             )
-            copyProc = subprocess.run(copyCmd, shell=True)
 
             # After copying the dump to the destination, remove the cached dump file
-            if copyProc.returncode != 0:
+            if copyCommand.exit_code != 0:
                 helper.printError(
-                    f"Copy command returned with error code {copyProc.returncode}. Aborting."
+                    f"Copy command returned with error code {copyCommand.exit_code}. Aborting."
                 )
             dumpCacheFile.unlink()
 

@@ -1,4 +1,5 @@
 # Stdlib imports
+import os
 import re
 import sys
 
@@ -15,8 +16,8 @@ def fixTimestamp(t: str) -> str:
     )
 
 
-def printLine(*args):
-    print("-" * 8, *args)
+def printLine(*args, file=sys.stdout):
+    print("-" * 8, *args, file=file)
 
 
 def printNestedLine(*args):
@@ -24,7 +25,7 @@ def printNestedLine(*args):
 
 
 def printWarning(message: str):
-    printLine(f"{Fore.YELLOW}{message}{Style.RESET_ALL}")
+    printLine(f"{Fore.YELLOW}{message}{Style.RESET_ALL}", file=sys.stderr)
 
 
 def printError(message: str):
@@ -69,9 +70,19 @@ def getBaseResticsArgs(config: dict, profileData: dict) -> list[str]:
 
     # Return the final list of args
     return [
-        config.get("executable", "restic"),
         *cacheArgs,
         *passwordArgs,
         "--repo",
         profileData["repo"],
     ]
+
+
+def getResticEnv(config: dict, profileData: dict) -> dict:
+    env = os.environ.copy()
+
+    # If the repo is an S3 connection, return the s3 credentials as env variables
+    if profileData["repo"].startswith("s3"):
+        env["AWS_ACCESS_KEY_ID"] = profileData["s3"]["key"]
+        env["AWS_SECRET_ACCESS_KEY"] = profileData["s3"]["secret"]
+
+    return env
