@@ -81,8 +81,7 @@ def getResticEnv(config: dict, profileData: dict) -> dict:
     env = os.environ.copy()
 
     # If the repo is an S3 connection, return the s3 credentials as env variables
-    if profileData["repo"].startswith("s3"):
-        env["AWS_ACCESS_KEY_ID"] = profileData["s3"]["key"]
-        env["AWS_SECRET_ACCESS_KEY"] = profileData["s3"]["secret"]
+    if profileEnv := profileData.get("env", None):
+        env.update(profileEnv)
 
     return env
