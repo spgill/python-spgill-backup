@@ -31,12 +31,9 @@ def loadConfigValues(configPath: str = None) -> dict:
     values: dict = None
     with filePath.open("r") as handle:
         values = yaml.load(handle, Loader=yaml.SafeLoader)
-        if "v" not in values:
-            values["v"] = _defaultConfig["v"]
-            updateFile = True
-        elif values["v"] < _defaultConfig["v"]:
+        if values["v"] < _defaultConfig["v"]:
             helper.printWarning(
-                f'Warning: Config file at "{filePath}" is possibly incompatible with this version of the backup tool. Delete the "v" property in the config file to suppress this warning.'
+                f'Warning: Config file at "{filePath}" is possibly incompatible with this version of the backup tool. Validate the contents of the config file are compatible and update the "v" property to "{_defaultConfig["v"]}", or delete the "v" property entirely to suppress this warning.'
             )
 
     # If the config file needs to be updated, do it now
