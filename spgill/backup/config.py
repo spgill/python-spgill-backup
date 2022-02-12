@@ -6,9 +6,13 @@ import pathlib
 import yaml
 
 # Local imports
-from . import helper
+from . import helper, schema
 
-_defaultConfig = {"v": 1, "profiles": {}}
+_defaultConfig: schema.MasterBackupConfiguration = {
+    "v": 2,
+    "locations": {},
+    "profiles": {},
+}
 
 
 def getDefaultConfigPath() -> str:
@@ -16,9 +20,9 @@ def getDefaultConfigPath() -> str:
 
 
 # Return the config values in the config file
-def loadConfigValues(configPath: str = None) -> dict:
-    updateFile = False
-
+def loadConfigValues(
+    configPath: str = None,
+) -> schema.MasterBackupConfiguration:
     # Resolve the path string to a path object
     filePath = pathlib.Path(configPath or getDefaultConfigPath()).expanduser()
 
@@ -28,18 +32,13 @@ def loadConfigValues(configPath: str = None) -> dict:
             yaml.dump(_defaultConfig, handle)
 
     # Open and decode the config file
-    values: dict = None
+    values: schema.MasterBackupConfiguration = {}
     with filePath.open("r") as handle:
         values = yaml.load(handle, Loader=yaml.SafeLoader)
         if values["v"] < _defaultConfig["v"]:
             helper.printWarning(
-                f'Warning: Config file at "{filePath}" is possibly incompatible with this version of the backup tool. Validate the contents of the config file are compatible and update the "v" property to "{_defaultConfig["v"]}", or delete the "v" property entirely to suppress this warning.'
+                f'Warning: Config file located at "{filePath}" is possibly incompatible with the version of the backup tool you are using. Validate that the contents of the config file are compatible and update the "v" property to "v: {_defaultConfig["v"]}", or delete the "v" property entirely to suppress this warning in the future.'
             )
-
-    # If the config file needs to be updated, do it now
-    if updateFile:
-        with filePath.open("w") as handle:
-            yaml.dump(values, handle)
 
     # Finally, return the values
     return values

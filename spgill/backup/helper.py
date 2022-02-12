@@ -7,6 +7,9 @@ import sys
 from colorama import Fore, Style
 import humanize
 
+# Local imports
+from . import schema
+
 
 def fixTimestamp(t: str) -> str:
     return re.sub(
@@ -33,7 +36,7 @@ def printError(message: str):
     exit(1)
 
 
-def printKeyVal(key: str, value: str):
+def printKeyVal(key: str, value: str = ""):
     print(f"{Fore.YELLOW}{key}{Style.RESET_ALL}: {value}")
 
 
@@ -41,17 +44,37 @@ def humanReadable(num):
     return humanize.naturalsize(num, binary=True)
 
 
-def getProfileData(config: dict, profileName: str) -> dict:
+def getLocationConfig(
+    config: schema.MasterBackupConfiguration, name: str
+) -> schema.BackupLocation:
+    locations = config.get("locations", {})
+
+    if not (locationData := locations.get(name, None)):
+        printError(f"Error: No backup location '{name}' defined in config")
+
+    return locationData
+
+
+def getProfileConfig(
+    config: schema.MasterBackupConfiguration, name: str
+) -> schema.BackupProfile:
     profiles = config.get("profiles", {})
 
-    # Make sure the selected profile is defined
-    if profileName not in profiles:
-        printError(f"Error: No profile '{profileName}' defined in config")
+    if not (profileData := profiles.get(name, None)):
+        printError(f"Error: No backup profile '{name}' defined in config")
 
-    return profiles[profileName]
+    # Ensure there is a location
+    if "location" not in profileData:
+        printError(f"Error: No location defined for profile '{name}'")
+
+    return profileData
 
 
-def getBaseResticsArgs(config: dict, profileData: dict) -> list[str]:
+def getBaseArgsForLocation(
+    config: schema.MasterBackupConfiguration, locationName: str
+) -> list[str]:
+    locationConf = getLocationConfig(config, locationName)
+
     # Generate cache dir args
     cacheArgs = []
     if cachePath := config.get("cache", None):
@@ -59,13 +82,13 @@ def getBaseResticsArgs(config: dict, profileData: dict) -> list[str]:
 
     # Generate password args
     passwordArgs = []
-    if "passwordFile" in profileData:
-        passwordArgs = ["--password-file", profileData["passwordFile"]]
-    elif "passwordCommand" in profileData:
-        passwordArgs = ["--password-command", profileData["passwordCommand"]]
+    if "passwordFile" in locationConf:
+        passwordArgs = ["--password-file", locationConf["passwordFile"]]
+    elif "passwordCommand" in locationConf:
+        passwordArgs = ["--password-command", locationConf["passwordCommand"]]
     else:
         printWarning(
-            f"Warning: No 'passwordCommand' or 'passwordFile' defined for profile '{profileData}'"
+            f"Warning: No 'passwordCommand' or 'passwordFile' defined for backup location '{locationName}'"
         )
 
     # Return the final list of args
@@ -73,15 +96,31 @@ def getBaseResticsArgs(config: dict, profileData: dict) -> list[str]:
         *cacheArgs,
         *passwordArgs,
         "--repo",
-        profileData["repo"],
+        locationConf["path"],
     ]
 
 
-def getResticEnv(config: dict, profileData: dict) -> dict:
+def getTagArgs(
+    config: schema.MasterBackupConfiguration, profileName: str
+) -> list[str]:
+    profileConf = getProfileConfig(config, profileName)
+
+    if tags := profileConf.get("tags", []):
+        return ["--tag", ",".join(tags)]
+
+    return []
+
+
+def getResticEnv(
+    config: schema.MasterBackupConfiguration,
+    locationName: str,
+) -> dict:
+    locationConf = getLocationConfig(config, locationName)
+
     env = os.environ.copy()
 
-    # If the repo is an S3 connection, return the s3 credentials as env variables
-    if profileEnv := profileData.get("env", None):
-        env.update(profileEnv)
+    # Inject any variables defined in the backup location's "env" attribute
+    if locationEnv := locationConf.get("env", None):
+        env.update(locationEnv)
 
     return env

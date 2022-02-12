@@ -13,7 +13,7 @@ import colorama
 from colorama import Fore, Style
 
 # Local imports
-from . import helper, command, config as applicationConfig
+from . import helper, command, config as applicationConfig, schema
 
 
 @click.group()
@@ -31,11 +31,13 @@ def cli(ctx, config):
     # Load the config options and insert it into the context object
     ctx.obj = applicationConfig.loadConfigValues(config)
 
-    # If there are no profiles defined, print error message and exit
+    # If there are no backup locations defined, print error message and exit
+    if not len(ctx.obj.get("locations", {}).keys()):
+        helper.printError("Error: No backup locations defined in config")
+
+    # If there are no backup profiles defined, print error message and exit
     if not len(ctx.obj.get("profiles", {}).keys()):
-        helper.printError(
-            f"{Fore.RED}Error: No profiles defined in config{Style.RESET_ALL}"
-        )
+        helper.printError("Error: No backup profiles defined in config")
 
 
 @cli.command(
@@ -50,10 +52,12 @@ def cli(ctx, config):
 )
 @click.argument("profile", type=str, required=True)
 def cli_run(obj, go, profile):
-    profileData = helper.getProfileData(obj, profile)
+    profileConf = helper.getProfileConfig(obj, profile)
+    locationName = profileConf["location"]
 
     # Get the repo's data
-    helper.printLine("Selected profile:", profile)
+    helper.printLine("Chosen profile:", profile)
+    helper.printLine("Backup location:", locationName)
 
     # If in preview mode, print a warning
     if not go:
@@ -64,29 +68,27 @@ def cli_run(obj, go, profile):
     helper.printLine("Beginning backup...")
 
     # Add global include/exclude rules, then iterate through each group and add theirs
-    include = profileData.get("include", [])
-    exclude = profileData.get("exclude", [])
-    groups = profileData.get("groups", {})
-    for groupName in groups:
-        include += groups[groupName].get("include", [])
-        exclude += groups[groupName].get("exclude", [])
+    include = profileConf.get("include", [])
+    exclude = profileConf.get("exclude", [])
+    groups = profileConf.get("groups", {})
+    for _, groupDef in groups.items():
+        include += groupDef.get("include", [])
+        exclude += groupDef.get("exclude", [])
 
     # Construct the restic args
     args = [
-        *helper.getBaseResticsArgs(obj, profileData),
+        *helper.getBaseArgsForLocation(obj, locationName),
         "backup",
-        *itertools.chain(
-            *[["--tag", tag] for tag in profileData.get("tags", [])]
-        ),
+        *helper.getTagArgs(obj, profile),
         *itertools.chain(*[["--exclude", pattern] for pattern in exclude]),
         *include,
-        *profileData.get("args", []),
+        *profileConf.get("args", []),
     ]
 
     # If this is the real deal, execute the backup
     if go:
         command.restic(
-            args, _env=helper.getResticEnv(obj, profileData), _fg=True
+            args, _env=helper.getResticEnv(obj, locationName), _fg=True
         )
 
     # If in preview mode, just print the joined args
@@ -103,67 +105,67 @@ def cli_run(obj, go, profile):
     help="""Execute the restic command line directly. Repo, cache, and password args for PROFILE are automatically added before your own RESTIC_ARGS.""",
 )
 @click.pass_obj
-@click.argument("profile", type=str, required=True)
+@click.argument("location", type=str, required=True)
 @click.argument("restic_args", nargs=-1, type=click.UNPROCESSED)
-def cli_restic(obj, profile, restic_args):
-    profileData = helper.getProfileData(obj, profile)
-
-    # Compile everything, with unprocessed args, into a list
+def cli_restic(obj, location, restic_args):
+    # Collate everything, with unprocessed args, into a list
     args = [
-        *helper.getBaseResticsArgs(obj, profileData),
+        *helper.getBaseArgsForLocation(obj, location),
         *restic_args,
     ]
 
     # Execute the command
-    command.restic(args, _env=helper.getResticEnv(obj, profileData), _fg=True)
+    command.restic(args, _env=helper.getResticEnv(obj, location), _fg=True)
 
 
 @cli.command(
     name="command",
-    help="""Write the basic restic command to stdout. Helpful for using a repo in an external script.""",
+    help="""Write the basic restic command for a backup location to stdout. Helpful for using a repo in an external script.""",
 )
 @click.pass_obj
-@click.argument("profile", type=str, required=True)
-def cli_command(obj, profile):
-    profileData = helper.getProfileData(obj, profile)
+@click.argument("location", type=str, required=True)
+def cli_command(obj: schema.MasterBackupConfiguration, location: str):
+    locationConf = helper.getLocationConfig(obj, location)
 
-    if profileData["repo"].startswith("s3"):
-        helper.printWarning(
-            "Warning: S3 repos require credential environment variables be set before command execution!"
-        )
+    # We need to convert any environment vars to key=value pairs
+    envArgs = []
+    if locationEnv := locationConf.get("env", None):
+        envArgs.append("env")
+        for key, value in locationEnv.items():
+            envArgs.append(f"{key}={value}")
 
     sys.stdout.write(
-        shlex.join(["restic", *helper.getBaseResticsArgs(obj, profileData)])
+        shlex.join(
+            [*envArgs, "restic", *helper.getBaseArgsForLocation(obj, location)]
+        )
     )
 
 
 @cli.command(
-    name="dump",
+    name="archive",
     help=f"""
-    Extract and dump snapshots from repo of PROFILE to a tar archive at DESTINATION. If no SNAPSHOTS are given, defaults to 'latest' snapshot. Includes AES256 encyption and Zstd compression.
+    Extract and archive snapshots from repo of PROFILE to a tar archive at DESTINATION. If no SNAPSHOTS are given, defaults to 'latest' snapshot. Includes AES256 encyption and Zstd compression.
 
-    {Fore.RED}WARNING{Style.RESET_ALL}: Only works on Linux/macOS
+    {Fore.RED}WARNING{Style.RESET_ALL}: Only designed to work in a Linux/macOS environment
     """,
 )
 @click.pass_obj
 @click.argument("destination", type=str, required=True)
 @click.argument("profile", type=str, required=True)
 @click.argument("snapshots", nargs=-1, type=str, required=False)
-def cli_dump(obj, destination, profile, snapshots):
-    profiles = obj.get("profiles", {})
+def cli_archive(
+    obj: schema.MasterBackupConfiguration, destination, profile: str, snapshots
+):
+    profileConf = helper.getProfileConfig(obj, profile)
+    locationName = profileConf["location"]
+    # locationConf = helper.getLocationConfig(locationName)
 
-    # Make sure the selected profile is defined
-    if profile not in profiles:
-        helper.printError(f"Error: No profile '{profile}' defined in config")
-    profileData = profiles[profile]
-
-    # Dump config is a nested object. Ensure it exists
-    if not (dumpConfig := obj.get("dump", None)):
-        helper.printError("Error: No dump options defined in config")
+    # Pull archive configuration out of larger configuration structure
+    archiveConf = obj.get("archive", {})
 
     # Reusable base args for following commands
-    repoArgs = helper.getBaseResticsArgs(obj, profileData)
-    repoEnv = helper.getResticEnv(obj, profileData)
+    locationArgs = helper.getBaseArgsForLocation(obj, locationName)
+    locationEnv = helper.getResticEnv(obj, locationName)
 
     dumpDestDir = pathlib.Path(destination).expanduser()
     if not dumpDestDir.exists():
@@ -172,16 +174,16 @@ def cli_dump(obj, destination, profile, snapshots):
         )
 
     # Cache directory is optional
-    cacheEnabled = "cache" in dumpConfig
+    cacheEnabled = "cache" in archiveConf
     dumpCacheDir = (
         pathlib.Path(
-            dumpConfig.get("cache", obj.get("cache", "~"))
+            archiveConf.get("cache", obj.get("cache", "~"))
         ).expanduser()
         if cacheEnabled
         else dumpDestDir
     )
 
-    dumpPasswordFile = pathlib.Path(dumpConfig.get("passwordFile", None))
+    dumpPasswordFile = pathlib.Path(archiveConf.get("passwordFile", None))
 
     # If no snapshots have been selected, default to latest
     if not len(snapshots):
@@ -197,8 +199,14 @@ def cli_dump(obj, destination, profile, snapshots):
 
         # Fetch information on the latest snapshot
         helper.printNestedLine(f"Querying snapshots for '{snapshotName}'...")
-        snapsArgs = [*repoArgs, "--quiet", "snapshots", snapshotName, "--json"]
-        snapsCommand = command.restic(snapsArgs, _env=repoEnv)
+        snapsArgs = [
+            *locationArgs,
+            "--quiet",
+            "snapshots",
+            snapshotName,
+            "--json",
+        ]
+        snapsCommand = command.restic(snapsArgs, _env=locationEnv)
         if b"null" in snapsCommand.stdout:
             helper.printError(f"Could not find snapshot: '{snapshotName}'")
         latest = json.loads(snapsCommand.stdout)[0]
@@ -211,7 +219,7 @@ def cli_dump(obj, destination, profile, snapshots):
 
         # Creat timestamp and unique filename for this repo
         timestamp = latest["time"].strftime(r"%Y%m%d%H%M%S")
-        repoDirName = pathlib.Path(profileData["repo"]).name
+        repoDirName = pathlib.Path(profileConf["repo"]).name
         filename = (
             f"{repoDirName}_{timestamp}_{latest['short_id']}.tar.zst.aes"
         )
@@ -233,8 +241,8 @@ def cli_dump(obj, destination, profile, snapshots):
 
         # Fetch the size of the latest snapshot
         helper.printNestedLine("Querying snapshot size...")
-        statsArgs = [*repoArgs, "--quiet", "stats", latest["id"], "--json"]
-        statsCommand = command.restic(statsArgs, _env=repoEnv)
+        statsArgs = [*locationArgs, "--quiet", "stats", latest["id"], "--json"]
+        statsCommand = command.restic(statsArgs, _env=locationEnv)
         latestSize = json.loads(statsCommand.stdout)["total_size"]
         helper.printNestedLine(
             f"Archive should be no larger than (approx.) {helper.humanReadable(latestSize)}"
@@ -263,8 +271,8 @@ def cli_dump(obj, destination, profile, snapshots):
             command.zStd(
                 command.pv(
                     command.restic(
-                        *[*repoArgs, "dump", latest["id"], "/"],
-                        _env=repoEnv,
+                        *[*locationArgs, "dump", latest["id"], "/"],
+                        _env=locationEnv,
                         _piped=True,
                     ),
                     *["-pterbs", str(latestSize)],
@@ -365,21 +373,57 @@ def cli_decrypt(obj, file_input, file_output):
 
 
 @cli.command(
-    name="list", help="""List all backup profiles defined in config file."""
+    name="list",
+    help="""List all backup locations and profiles defined in config file.""",
 )
 @click.pass_obj
-def cli_list(obj):
-    profiles = obj.get("profiles", {})
-    for i, profileName in enumerate(profiles):
-        if i > 0:
-            print()
+def cli_list(obj: schema.MasterBackupConfiguration):
+    # Locations
+    helper.printLine("Locations:")
+    for locationName, locationConf in obj["locations"].items():
+        helper.printKeyVal("Name", locationName)
+        helper.printKeyVal("  path", locationConf.get("path"))
+        helper.printKeyVal("  passwordFile", locationConf.get("passwordFile"))
+        helper.printKeyVal(
+            "  passwordCommand", locationConf.get("passwordCommand")
+        )
 
-        profileData = profiles[profileName]
+        helper.printKeyVal("  env")
+        for key, value in locationConf.get("env", {}).items():
+            helper.printKeyVal(f"    {key}", value)
 
+        print()
+
+    # Profiles
+    helper.printLine("Profiles:")
+    for profileName, profileConf in obj["profiles"].items():
         helper.printKeyVal("Name", profileName)
-        helper.printKeyVal("  repo", profileData["repo"])
-        helper.printKeyVal("  include", profileData.get("include", []))
-        helper.printKeyVal("  exclude", profileData.get("exclude", []))
+        helper.printKeyVal("  location", profileConf["location"])
+        helper.printKeyVal("  tags", ", ".join(profileConf.get("tags", [])))
+
+        helper.printKeyVal("  include")
+        for line in profileConf.get("include", []):
+            print(f"    {line}")
+
+        helper.printKeyVal("  exclude")
+        for line in profileConf.get("exclude", []):
+            print(f"    {line}")
+
+        helper.printKeyVal("  groups")
+        for groupName, groupConf in profileConf.get("groups", {}).items():
+            helper.printKeyVal(f"    {groupName}")
+            helper.printKeyVal("      include")
+            for line in groupConf.get("include", []):
+                print(f"        {line}")
+            helper.printKeyVal("      exclude")
+            for line in groupConf.get("exclude", []):
+                print(f"        {line}")
+
+        helper.printKeyVal("  args")
+        for line in profileConf.get("args", []):
+            print(f"    {line}")
+
+        print()
 
 
 if __name__ == "__main__":
