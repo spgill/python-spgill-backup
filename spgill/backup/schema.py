@@ -14,6 +14,7 @@ class BackupSourceDef(typing.TypedDict, total=False):
 
 
 class BackupProfile(BackupSourceDef, total=False):
+    archiveName: str
     location: str
     tags: list[str]
     groups: dict[str, BackupSourceDef]

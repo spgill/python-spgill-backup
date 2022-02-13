@@ -6,9 +6,10 @@ import pathlib
 import shlex
 import shutil
 import sys
+import typer
+import typing
 
 # Vendor imports
-import click
 import colorama
 from colorama import Fore, Style
 
@@ -16,15 +17,28 @@ from colorama import Fore, Style
 from . import helper, command, config as applicationConfig, schema
 
 
-@click.group()
-@click.pass_context
-@click.option(
-    "--config",
-    "-c",
-    type=str,
-    help="""Path to backup config file. Defaults to '~/.spgill.backup.yaml'.""",
-)
-def cli(ctx, config):
+# Create a subclass of the context with correct typing of the backup config object
+class BackupCLIContext(typer.Context):
+    obj: schema.MasterBackupConfiguration
+
+
+# Initialize the typer app
+cli = typer.Typer()
+
+# Default configuration file path
+defaultConfigPath = pathlib.Path("~/.spgill.backup.yaml")
+
+
+# Main method that initializes the configuration and makes it available to all commands
+@cli.callback()
+def cli_main(
+    ctx: BackupCLIContext,
+    config: pathlib.Path = typer.Option(
+        defaultConfigPath,
+        envvar="SPGILL_BACKUP_CONFIG",
+        help="Path to backup configuration file.",
+    ),
+):
     # Initialize colorama (for windows)
     colorama.init()
 
@@ -40,19 +54,20 @@ def cli(ctx, config):
         helper.printError("Error: No backup profiles defined in config")
 
 
-@cli.command(
-    name="run", help="""Execute a backup profile with the name PROFILE."""
-)
-@click.pass_obj
-@click.option(
-    "--go",
-    "-g",
-    is_flag=True,
-    help="""By default, this command runs in 'dry run' mode. This flag is necessary to actually execute the backup.""",
-)
-@click.argument("profile", type=str, required=True)
-def cli_run(obj, go, profile):
-    profileConf = helper.getProfileConfig(obj, profile)
+@cli.command(name="run", help="Execute a backup profile now.")
+def cli_run(
+    ctx: BackupCLIContext,
+    profile: str = typer.Argument(
+        ..., help="Name of the backup profile to use."
+    ),
+    go: bool = typer.Option(
+        False,
+        "--go",
+        help="By default, this command runs in a 'dry-run' mode. This option will disable 'dry-run' mode and execute the backup process",
+    ),
+):
+    config = ctx.obj
+    profileConf = helper.getProfileConfig(config, profile)
     locationName = profileConf["location"]
 
     # Get the repo's data
@@ -77,9 +92,9 @@ def cli_run(obj, go, profile):
 
     # Construct the restic args
     args = [
-        *helper.getBaseArgsForLocation(obj, locationName),
+        *helper.getBaseArgsForLocation(config, locationName),
         "backup",
-        *helper.getTagArgs(obj, profile),
+        *helper.getTagArgs(config, profile),
         *itertools.chain(*[["--exclude", pattern] for pattern in exclude]),
         *include,
         *profileConf.get("args", []),
@@ -88,7 +103,7 @@ def cli_run(obj, go, profile):
     # If this is the real deal, execute the backup
     if go:
         command.restic(
-            args, _env=helper.getResticEnv(obj, locationName), _fg=True
+            args, _env=helper.getResticEnv(config, locationName), _fg=True
         )
 
     # If in preview mode, just print the joined args
@@ -97,35 +112,42 @@ def cli_run(obj, go, profile):
 
 
 @cli.command(
-    name="cli",
-    context_settings=dict(
-        ignore_unknown_options=True,
-        allow_interspersed_args=False,
-    ),
-    help="""Execute the restic command line directly. Repo, cache, and password args for PROFILE are automatically added before your own RESTIC_ARGS.""",
+    name="execute",
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+        "allow_interspersed_args": False,
+    },
+    help="Execute the restic command line application directly. All arguments pertaining to the backup location (repo, cache, password, etc.) are appended automatically. Every argument after LOCATION will be passed directly to the restic command.",
 )
-@click.pass_obj
-@click.argument("location", type=str, required=True)
-@click.argument("restic_args", nargs=-1, type=click.UNPROCESSED)
-def cli_restic(obj, location, restic_args):
+def cli_execute(
+    ctx: BackupCLIContext,
+    location: str = typer.Argument(
+        ..., help="Name of the backup location to use when executing restic."
+    ),
+):
+    config = ctx.obj
+
     # Collate everything, with unprocessed args, into a list
     args = [
-        *helper.getBaseArgsForLocation(obj, location),
-        *restic_args,
+        *helper.getBaseArgsForLocation(config, location),
+        *ctx.args,
     ]
 
     # Execute the command
-    command.restic(args, _env=helper.getResticEnv(obj, location), _fg=True)
+    command.restic(args, _env=helper.getResticEnv(config, location), _fg=True)
 
 
 @cli.command(
     name="command",
-    help="""Write the basic restic command for a backup location to stdout. Helpful for using a repo in an external script.""",
+    help="Write the basic restic command for a backup location to stdout. Includes all arguments pertaining to the backup location (repo, cache, password, etc), as well as any environment variables necessary. Helpful for using a repo in an external script.",
 )
-@click.pass_obj
-@click.argument("location", type=str, required=True)
-def cli_command(obj: schema.MasterBackupConfiguration, location: str):
-    locationConf = helper.getLocationConfig(obj, location)
+def cli_command(
+    ctx: BackupCLIContext,
+    location: str = typer.Argument(..., help="Name of the backup location."),
+):
+    config = ctx.obj
+    locationConf = helper.getLocationConfig(config, location)
 
     # We need to convert any environment vars to key=value pairs
     envArgs = []
@@ -136,7 +158,11 @@ def cli_command(obj: schema.MasterBackupConfiguration, location: str):
 
     sys.stdout.write(
         shlex.join(
-            [*envArgs, "restic", *helper.getBaseArgsForLocation(obj, location)]
+            [
+                *envArgs,
+                "restic",
+                *helper.getBaseArgsForLocation(config, location),
+            ]
         )
     )
 
@@ -144,46 +170,75 @@ def cli_command(obj: schema.MasterBackupConfiguration, location: str):
 @cli.command(
     name="archive",
     help=f"""
-    Extract and archive snapshots from repo of PROFILE to a tar archive at DESTINATION. If no SNAPSHOTS are given, defaults to 'latest' snapshot. Includes AES256 encyption and Zstd compression.
+    Extract and archive one or more snapshots from a backup location. Snapshots will be stored as ".tar" archives.
 
-    {Fore.RED}WARNING{Style.RESET_ALL}: Only designed to work in a Linux/macOS environment
+    {Fore.YELLOW}WARNING{Style.RESET_ALL}: Only designed to work in a Linux/macOS environment.
     """,
 )
-@click.pass_obj
-@click.argument("destination", type=str, required=True)
-@click.argument("profile", type=str, required=True)
-@click.argument("snapshots", nargs=-1, type=str, required=False)
 def cli_archive(
-    obj: schema.MasterBackupConfiguration, destination, profile: str, snapshots
+    ctx: BackupCLIContext,
+    destination: pathlib.Path = typer.Argument(
+        ..., help="Destination directory for the archive file."
+    ),
+    profile: str = typer.Argument(..., help="Name of the backup profile."),
+    snapshots: list[str] = typer.Argument(
+        ...,
+        help="List of snapshot ID's to archive. 'latest' is valid and refers to the latest snapshot.",
+    ),
+    encrypt: bool = typer.Option(
+        False,
+        "--encrypt/",
+        "-e/",
+        help="Encrypt the archive using AES-256 encryption. Encrypted archives will have their extension changed to '.aes'. Make sure to specify a password file either with '--password' or in the configuration file.",
+    ),
+    password: typing.Optional[pathlib.Path] = typer.Option(
+        None,
+        "--password",
+        "-p",
+        help="Specify path to a file containing the password for archive encryption purposes.",
+    ),
 ):
-    profileConf = helper.getProfileConfig(obj, profile)
+    config = ctx.obj
+    profileConf = helper.getProfileConfig(config, profile)
     locationName = profileConf["location"]
     # locationConf = helper.getLocationConfig(locationName)
 
     # Pull archive configuration out of larger configuration structure
-    archiveConf = obj.get("archive", {})
+    archiveConf = config.get("archive", {})
 
     # Reusable base args for following commands
-    locationArgs = helper.getBaseArgsForLocation(obj, locationName)
-    locationEnv = helper.getResticEnv(obj, locationName)
+    locationArgs = helper.getBaseArgsForLocation(config, locationName)
+    locationEnv = helper.getResticEnv(config, locationName)
 
-    dumpDestDir = pathlib.Path(destination).expanduser()
-    if not dumpDestDir.exists():
+    archiveDestDir = destination.expanduser()
+    if not archiveDestDir.exists():
         helper.printError(
-            f"Destination directory '{dumpDestDir}' does not exist"
+            f"Destination directory '{archiveDestDir}' does not exist"
         )
 
     # Cache directory is optional
-    cacheEnabled = "cache" in archiveConf
-    dumpCacheDir = (
-        pathlib.Path(
-            archiveConf.get("cache", obj.get("cache", "~"))
-        ).expanduser()
+    dumpCacheValue = archiveConf.get("cache", config.get("cache", None))
+    cacheEnabled = bool(dumpCacheValue)
+    archiveCacheDir = (
+        pathlib.Path(dumpCacheValue).expanduser()
         if cacheEnabled
-        else dumpDestDir
+        else archiveDestDir
     )
 
-    dumpPasswordFile = pathlib.Path(archiveConf.get("passwordFile", None))
+    # Resolve the state of encryption and related variables
+    encryptionPasswordPath: typing.Optional[pathlib.Path] = None
+    encryptionEnabled = encrypt
+    if encryptionEnabled:
+        encryptionPasswordValue = password or archiveConf.get(
+            "passwordFile", None
+        )
+        if not encryptionPasswordValue:
+            helper.printError(
+                "Archive encryption has been enabled, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
+            )
+        encryptionPasswordPath = pathlib.Path(
+            encryptionPasswordValue
+        ).expanduser()
 
     # If no snapshots have been selected, default to latest
     if not len(snapshots):
@@ -191,6 +246,7 @@ def cli_archive(
 
     # Print some startup information
     helper.printLine("Selected profile:", profile)
+    helper.printLine("location name:", locationName)
     helper.printLine("Selected snapshots:", ", ".join(snapshots))
 
     # Iterate through each snapshot that's being dumped
@@ -219,19 +275,21 @@ def cli_archive(
 
         # Creat timestamp and unique filename for this repo
         timestamp = latest["time"].strftime(r"%Y%m%d%H%M%S")
-        repoDirName = pathlib.Path(profileConf["repo"]).name
-        filename = (
-            f"{repoDirName}_{timestamp}_{latest['short_id']}.tar.zst.aes"
-        )
+        shortName = profileConf.get("archiveName", profile)
+        filename = f"{shortName}_{timestamp}_{latest['short_id']}.tar.zst"
+        if encryptionEnabled:
+            filename += ".aes"
 
         # Make sure the cache and destination files don't exist yet
-        dumpCacheFile = dumpCacheDir / filename
-        if dumpCacheFile.exists():
-            helper.printError(f"Archive already exists at '{dumpCacheFile}'")
-        dumpDestFile = dumpDestDir / filename
-        if dumpDestFile.exists():
+        archiveCacheFile = archiveCacheDir / filename
+        if archiveCacheFile.exists():
             helper.printError(
-                f"Final archive already exists at '{dumpDestFile}'"
+                f"Archive already exists at '{archiveCacheFile}'"
+            )
+        archiveDestFile = archiveDestDir / filename
+        if archiveDestFile.exists():
+            helper.printError(
+                f"Final archive already exists at '{archiveDestFile}'"
             )
 
         # Inform the user which snapshot is being used
@@ -249,26 +307,54 @@ def cli_archive(
         )
 
         # Ensure there's enough space in the cache dir and the destination
-        dumpCacheUsage = shutil.disk_usage(dumpCacheDir)
-        if dumpCacheUsage.free < latestSize:
+        archiveCacheUsage = shutil.disk_usage(archiveCacheDir)
+        if archiveCacheUsage.free < latestSize:
             helper.printError(
                 f"Error: Dump archive needs at least {helper.humanReadable(latestSize)}, "
-                f"but directory only has {helper.humanReadable(dumpCacheUsage.free)} free"
+                f"but directory only has {helper.humanReadable(archiveCacheUsage.free)} free"
             )
-        dumpDestUsage = shutil.disk_usage(dumpDestDir)
-        if dumpDestUsage.free < latestSize:
+        archiveDestUsage = shutil.disk_usage(archiveDestDir)
+        if archiveDestUsage.free < latestSize:
             helper.printError(
                 f"Error: Dump archive needs at least {helper.humanReadable(latestSize)}, "
-                f"but destination directory only has {helper.humanReadable(dumpDestUsage.free)} free"
+                f"but destination directory only has {helper.humanReadable(archiveDestUsage.free)} free"
             )
 
         # Begin dumping the repo to an archive
-        helper.printNestedLine(
-            "Creating archive... (compression and encryption enabled)"
-        )
-        print("Dumping to", dumpCacheFile)
-        dumpCommand = command.openSsl(
-            command.zStd(
+        helper.printNestedLine("Creating archive...")
+        dumpCommand = None
+        if encryptionEnabled:
+            dumpCommand = command.openSsl(
+                command.zStd(
+                    command.pv(
+                        command.restic(
+                            *[*locationArgs, "dump", latest["id"], "/"],
+                            _env=locationEnv,
+                            _piped=True,
+                        ),
+                        *["-pterbs", str(latestSize)],
+                        _err=sys.stderr,
+                        _piped=True,
+                    ),
+                    *["-c", "-T8"],
+                    _piped=True,
+                ),
+                *[
+                    "enc",
+                    "-aes-256-cbc",
+                    "-md",
+                    "sha512",
+                    "-pbkdf2",
+                    "-iter",
+                    "100000",
+                    "-pass",
+                    f"file:{encryptionPasswordPath}",
+                    "-e",
+                ],
+                _out=str(archiveCacheFile),
+            )
+        else:
+            dumpCommand = command.zStd(
                 command.pv(
                     command.restic(
                         *[*locationArgs, "dump", latest["id"], "/"],
@@ -280,36 +366,22 @@ def cli_archive(
                     _piped=True,
                 ),
                 *["-c", "-T8"],
-                _piped=True,
-            ),
-            *[
-                "enc",
-                "-aes-256-cbc",
-                "-md",
-                "sha512",
-                "-pbkdf2",
-                "-iter",
-                "100000",
-                "-pass",
-                f"file:{dumpPasswordFile}",
-                "-e",
-            ],
-            _out=str(dumpCacheFile),
-        )
+                _out=str(archiveCacheFile),
+            )
 
         # Detect dump errors
         if dumpCommand.exit_code != 0:
             helper.printError(
-                f"Dump command returned with error code {dumpCommand.exit_code}. Aborting."
+                f"Restic dump command returned with error code {dumpCommand.exit_code}. Aborting."
             )
 
         # Copy the dump archive to the destination, if cache was enabled
         if cacheEnabled:
             helper.printNestedLine("Moving archive to final destination...")
-            dumpSize = dumpCacheFile.stat().st_size
+            dumpSize = archiveCacheFile.stat().st_size
             copyCommand = command.pv(
-                *["-pterbs", dumpSize, dumpCacheFile],
-                _out=str(dumpDestFile),
+                *["-pterbs", dumpSize, archiveCacheFile],
+                _out=str(archiveDestFile),
                 _err=sys.stderr,
             )
 
@@ -318,36 +390,46 @@ def cli_archive(
                 helper.printError(
                     f"Copy command returned with error code {copyCommand.exit_code}. Aborting."
                 )
-            dumpCacheFile.unlink()
+            archiveCacheFile.unlink()
 
         # Print success message for this repo
         helper.printNestedLine(
-            f"{Fore.GREEN}Success!{Style.RESET_ALL} Archive is now available at {dumpDestFile}"
+            f"{Fore.GREEN}Success!{Style.RESET_ALL} Archive is now available at {archiveDestFile}"
         )
 
 
 @cli.command(
     name="decrypt",
-    context_settings=dict(
-        ignore_unknown_options=True,
-        allow_interspersed_args=False,
-    ),
-    help=f"""
-    Take an archive at FILE_INPUT, that was previously generated by the dump command, and write the decrypted and decompressed archive to FILE_OUTPUT.
-
-    {Fore.RED}WARNING{Style.RESET_ALL}: Only works on Linux/macOS
-    """,
+    help="Helper command for decrypting a snapshot archive that has been encrypted by this tool on export.",
 )
-@click.pass_obj
-@click.argument("file_input", type=click.File("rb"))
-@click.argument("file_output", type=click.File("wb"))
-def cli_decrypt(obj, file_input, file_output):
+def cli_decrypt(
+    ctx: BackupCLIContext,
+    stream_input: typer.FileBinaryRead = typer.Argument(..., metavar="INPUT"),
+    stream_output: typer.FileBinaryWrite = typer.Argument(
+        ..., metavar="OUTPUT"
+    ),
+    password: typing.Optional[pathlib.Path] = typer.Option(
+        None,
+        "--password",
+        "-p",
+        help="Specify path to a file containing the password for archive decryption.",
+    ),
+):
+    config = ctx.obj
+
     # Ensure output is NOT a terminal
-    if hasattr(file_output, "isatty") and file_output.isatty():
+    if hasattr(stream_output, "isatty") and stream_output.isatty():
         helper.printError("Stdout is a TTY. Try piping this command instead.")
 
     # Construct arguments for the command chain
-    dumpPasswordPath = obj.get("dump", {}).get("passwordFile", "")
+    archivePasswordValue = password or config.get("archive", {}).get(
+        "passwordFile", None
+    )
+    if not archivePasswordValue:
+        helper.printError(
+            "You are trying to decrypt an archive, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
+        )
+    archivePasswordPath = pathlib.Path(archivePasswordValue).expanduser()
 
     # Pipe openssl to zstd and then stdout
     command.zStd(
@@ -361,26 +443,27 @@ def cli_decrypt(obj, file_input, file_output):
                 "-iter",
                 "100000",
                 "-pass",
-                f"file:{dumpPasswordPath}",
+                f"file:{archivePasswordPath}",
                 "-d",
             ],
             _piped=True,
-            _in=file_input,
+            _in=stream_input,
         ),
         *["-dc", "-T8"],
-        _out=file_output,
+        _out=stream_output,
     )
 
 
 @cli.command(
     name="list",
-    help="""List all backup locations and profiles defined in config file.""",
+    help="List all backup locations and backup profiles defined in the configuration file.",
 )
-@click.pass_obj
-def cli_list(obj: schema.MasterBackupConfiguration):
+def cli_list(ctx: BackupCLIContext):
+    config = ctx.obj
+
     # Locations
     helper.printLine("Locations:")
-    for locationName, locationConf in obj["locations"].items():
+    for locationName, locationConf in config["locations"].items():
         helper.printKeyVal("Name", locationName)
         helper.printKeyVal("  path", locationConf.get("path"))
         helper.printKeyVal("  passwordFile", locationConf.get("passwordFile"))
@@ -396,7 +479,7 @@ def cli_list(obj: schema.MasterBackupConfiguration):
 
     # Profiles
     helper.printLine("Profiles:")
-    for profileName, profileConf in obj["profiles"].items():
+    for profileName, profileConf in config["profiles"].items():
         helper.printKeyVal("Name", profileName)
         helper.printKeyVal("  location", profileConf["location"])
         helper.printKeyVal("  tags", ", ".join(profileConf.get("tags", [])))
@@ -424,7 +507,3 @@ def cli_list(obj: schema.MasterBackupConfiguration):
             print(f"    {line}")
 
         print()
-
-
-if __name__ == "__main__":
-    cli()
