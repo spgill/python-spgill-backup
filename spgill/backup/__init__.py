@@ -168,6 +168,35 @@ def cli_command(
 
 
 @cli.command(
+    name="snapshots", help="List all snapshots found for the given profile."
+)
+def cli_snapshots(
+    ctx: BackupCLIContext,
+    profile: str = typer.Argument(..., help="Name of the backup profile."),
+    json: bool = typer.Option(False, "--json/", help="Enable JSON output."),
+):
+    config = ctx.obj
+    profileConf = helper.getProfileConfig(config, profile)
+    locationName = profileConf["location"]
+
+    # Assemble arguments for the command
+    args = [
+        *helper.getBaseArgsForLocation(config, locationName),
+        "snapshots",
+        *helper.getTagArgs(config, profile),
+    ]
+
+    # Enable JSON output if indicated
+    if json:
+        args.append("--json")
+
+    # Execute the command
+    command.restic(
+        args, _env=helper.getResticEnv(config, locationName), _fg=True
+    )
+
+
+@cli.command(
     name="archive",
     help=f"""
     Extract and archive one or more snapshots from a backup location. Snapshots will be stored as ".tar" archives.
