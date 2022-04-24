@@ -27,6 +27,7 @@ class BackupSourceDef(typing.TypedDict, total=False):
 
 
 class BackupProfile(BackupSourceDef, total=False):
+    hostname: str
     archiveName: str
     location: str
     tags: list[str]

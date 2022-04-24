@@ -102,14 +102,9 @@ def getBaseArgsForLocation(
     ]
 
 
-def getTagArgs(
-    config: schema.MasterBackupConfiguration, profileName: str
-) -> list[str]:
-    profileConf = getProfileConfig(config, profileName)
-
-    if tags := profileConf.get("tags", []):
+def getTagArgs(profile: schema.BackupProfile) -> list[str]:
+    if tags := profile.get("tags", []):
         return ["--tag", ",".join(tags)]
-
     return []
 
 
@@ -210,3 +205,9 @@ def getIncludeExcludeArgs(
     # Emit basic include lines
     for entry in includeList:
         yield entry
+
+
+def getHostnameArgs(profile: schema.BackupProfile) -> list[str]:
+    if hostname := profile.get("hostname", None):
+        return ["--host", hostname]
+    return []
