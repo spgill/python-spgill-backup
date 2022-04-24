@@ -489,48 +489,21 @@ def cli_list(ctx: BackupCLIContext):
     config = ctx.obj
 
     # Locations
-    helper.printLine("Locations:")
+    helper.printLine(f"Locations: {', '.join(config['locations'].keys())}")
     for locationName, locationConf in config["locations"].items():
         helper.printKeyVal("Name", locationName)
-        helper.printKeyVal("  path", locationConf.get("path"))
-        helper.printKeyVal("  passwordFile", locationConf.get("passwordFile"))
-        helper.printKeyVal(
-            "  passwordCommand", locationConf.get("passwordCommand")
-        )
-
-        helper.printKeyVal("  env")
-        for key, value in locationConf.get("env", {}).items():
-            helper.printKeyVal(f"    {key}", value)
-
+        helper.printConfigData(locationConf)
         print()
 
     # Profiles
-    helper.printLine("Profiles:")
-    for profileName, profileConf in config["profiles"].items():
+    helper.printLine(f"Profiles: {', '.join(config['profiles'].keys())}")
+    for profileName, profileConf in [
+        (
+            f"{Fore.RED}globalProfile{Style.RESET_ALL}",
+            config.get("globalProfile", {}),
+        ),
+        *config["profiles"].items(),
+    ]:
         helper.printKeyVal("Name", profileName)
-        helper.printKeyVal("  location", profileConf["location"])
-        helper.printKeyVal("  tags", ", ".join(profileConf.get("tags", [])))
-
-        helper.printKeyVal("  include")
-        for line in profileConf.get("include", []):
-            print(f"    {line}")
-
-        helper.printKeyVal("  exclude")
-        for line in profileConf.get("exclude", []):
-            print(f"    {line}")
-
-        helper.printKeyVal("  groups")
-        for groupName, groupConf in profileConf.get("groups", {}).items():
-            helper.printKeyVal(f"    {groupName}")
-            helper.printKeyVal("      include")
-            for line in groupConf.get("include", []):
-                print(f"        {line}")
-            helper.printKeyVal("      exclude")
-            for line in groupConf.get("exclude", []):
-                print(f"        {line}")
-
-        helper.printKeyVal("  args")
-        for line in profileConf.get("args", []):
-            print(f"    {line}")
-
+        helper.printConfigData(profileConf)
         print()

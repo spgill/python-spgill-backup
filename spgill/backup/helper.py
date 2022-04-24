@@ -8,6 +8,7 @@ import typing
 # Vendor imports
 from colorama import Fore, Style
 import humanize
+import yaml
 
 # Local imports
 from . import schema
@@ -40,6 +41,11 @@ def printError(message: str):
 
 def printKeyVal(key: str, value: str = ""):
     print(f"{Fore.YELLOW}{key}{Style.RESET_ALL}: {value}")
+
+
+def printConfigData(data: typing.Any):
+    serialized: str = yaml.dump(data)
+    print("\n".join("|  " + line for line in serialized.splitlines()))
 
 
 def humanReadable(num):
