@@ -45,4 +45,5 @@ class MasterBackupConfiguration(typing.TypedDict, total=False):
     cache: str
     locations: dict[str, BackupLocation]
     profiles: dict[str, BackupProfile]
+    globalProfile: BackupProfile
     archive: ArchiveConfiguration

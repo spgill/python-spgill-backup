@@ -90,8 +90,8 @@ def cli_run(
         *helper.getBaseArgsForLocation(config, locationName),
         "backup",
         *helper.getHostnameArgs(profileConf),
-        *helper.getTagArgs(profileConf),
-        *helper.getIncludeExcludeArgs(profileConf, groups),
+        *helper.getTagArgs(config, profile),
+        *helper.getIncludeExcludeArgs(config, profile, groups),
         *profileConf.get("args", []),
     ]
 
@@ -181,7 +181,7 @@ def cli_snapshots(
         *helper.getBaseArgsForLocation(config, locationName),
         "snapshots",
         *helper.getHostnameArgs(profileConf),
-        *helper.getTagArgs(profileConf),
+        *helper.getTagArgs(config, profile),
     ]
 
     # Enable JSON output if indicated

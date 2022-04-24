@@ -102,7 +102,11 @@ def getBaseArgsForLocation(
     ]
 
 
-def getTagArgs(profile: schema.BackupProfile) -> list[str]:
+def getTagArgs(
+    config: schema.MasterBackupConfiguration,
+    profileName: str,
+) -> list[str]:
+    profile = getProfileConfig(config, profileName)
     if tags := profile.get("tags", []):
         return ["--tag", ",".join(tags)]
     return []
@@ -131,10 +135,13 @@ def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
 
 
 def getIncludeExcludeArgs(
-    profile: schema.BackupProfile,
+    config: schema.MasterBackupConfiguration,
+    profileName: str,
     selectedGroupNames: typing.Sequence[str],
 ) -> typing.Generator[str, None, None]:
-    # Collate list of backup groups (including the base profile)
+    profile = getProfileConfig(config, profileName)
+
+    # Collate list of backup groups (including the base and global profiles)
     selectedGroups: list[schema.BackupSourceDef] = profile.get(
         "groups", {}
     ).values()
@@ -144,7 +151,9 @@ def getIncludeExcludeArgs(
             for groupName, group in profile.get("groups", {}).items()
             if groupName in selectedGroupNames
         ]
+
     finalGroups: list[schema.BackupSourceDef] = [
+        config.get("globalProfile", {}),
         profile,
         *selectedGroups,
     ]
