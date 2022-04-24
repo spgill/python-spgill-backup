@@ -91,7 +91,10 @@ def getBaseArgsForLocation(
     # Generate password args
     passwordArgs = []
     if "passwordFile" in locationConf:
-        passwordArgs = ["--password-file", locationConf["passwordFile"]]
+        passwordFilePath = fullyQualifiedPath(
+            locationConf["passwordFile"], True
+        )
+        passwordArgs = ["--password-file", passwordFilePath]
     elif "passwordCommand" in locationConf:
         passwordArgs = ["--password-command", locationConf["passwordCommand"]]
     else:
