@@ -1,6 +1,5 @@
 # Stdlib imports
 import datetime
-import itertools
 import json
 import pathlib
 import shlex
@@ -60,10 +59,16 @@ def cli_run(
     profile: str = typer.Argument(
         ..., help="Name of the backup profile to use."
     ),
+    groups: list[str] = typer.Option(
+        [],
+        "--group",
+        "-g",
+        help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
+    ),
     go: bool = typer.Option(
         False,
         "--go",
-        help="By default, this command runs in a 'dry-run' mode. This option will disable 'dry-run' mode and execute the backup process",
+        help="By default, this command operates in a 'dry-run' mode. This option will disable 'dry-run' mode and execute the backup process",
     ),
 ):
     config = ctx.obj
@@ -80,35 +85,26 @@ def cli_run(
             "Warning: Running in dry-run mode. Run tool again with '--go' option to execute backup."
         )
 
-    helper.printLine("Beginning backup...")
-
-    # Add global include/exclude rules, then iterate through each group and add theirs
-    include = profileConf.get("include", [])
-    exclude = profileConf.get("exclude", [])
-    groups = profileConf.get("groups", {})
-    for _, groupDef in groups.items():
-        include += groupDef.get("include", [])
-        exclude += groupDef.get("exclude", [])
-
     # Construct the restic args
     args = [
         *helper.getBaseArgsForLocation(config, locationName),
         "backup",
         *helper.getTagArgs(config, profile),
-        *itertools.chain(*[["--exclude", pattern] for pattern in exclude]),
-        *include,
+        *helper.getIncludeExcludeArgs(profileConf, groups),
         *profileConf.get("args", []),
     ]
 
     # If this is the real deal, execute the backup
     if go:
+        helper.printLine("Beginning backup...")
         command.restic(
             args, _env=helper.getResticEnv(config, locationName), _fg=True
         )
 
     # If in preview mode, just print the joined args
     else:
-        print(shlex.join(args))
+        helper.printLine("Restic command arguments:")
+        print(shlex.join([str(arg) for arg in args]))
 
 
 @cli.command(

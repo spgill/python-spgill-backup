@@ -1,7 +1,9 @@
 # Stdlib imports
 import os
+import pathlib
 import re
 import sys
+import typing
 
 # Vendor imports
 from colorama import Fore, Style
@@ -124,3 +126,87 @@ def getResticEnv(
         env.update(locationEnv)
 
     return env
+
+
+def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
+    path = pathlib.Path(pathStr).expanduser().absolute()
+    if ensureExists and not path.exists():
+        printError(f"File path '{path}' (from '{pathStr}') does not exist")
+    return path
+
+
+def getIncludeExcludeArgs(
+    profile: schema.BackupProfile,
+    selectedGroupNames: typing.Sequence[str],
+) -> typing.Generator[str, None, None]:
+    # Collate list of backup groups (including the base profile)
+    selectedGroups: list[schema.BackupSourceDef] = profile.get(
+        "groups", {}
+    ).values()
+    if selectedGroupNames:
+        selectedGroups = [
+            group
+            for groupName, group in profile.get("groups", {}).items()
+            if groupName in selectedGroupNames
+        ]
+    finalGroups: list[schema.BackupSourceDef] = [
+        profile,
+        *selectedGroups,
+    ]
+
+    # Basic include list must come last in the args, so they will be collected
+    # and emitted last
+    includeList: list[str] = []
+
+    # Iterate through the groups and generate arguments
+    for group in finalGroups:
+        # Store basic include entries for emitting at the end
+        for entry in group.get("include", []):
+            includeList.append(entry)
+
+        # Process various include files flags
+        for entry in group.get("includeFilesFrom", []):
+            yield "--files-from"
+            yield fullyQualifiedPath(entry, True)
+
+        for entry in group.get("includeFilesFromVerbatim", []):
+            yield "--files-from-verbatim"
+            yield fullyQualifiedPath(entry, True)
+
+        # Process various exlude file flags
+        for entry in group.get("exclude", []):
+            yield "--exclude"
+            yield entry
+
+        for entry in group.get("iexclude", []):
+            yield "--iexclude"
+            yield entry
+
+        for entry in group.get("excludeIfPresent", []):
+            yield "--exclude-if-present"
+            yield entry
+
+        for entry in group.get("excludeFile", []):
+            yield "--exclude-file"
+            yield fullyQualifiedPath(entry, True)
+
+        for entry in group.get("iexcludeFile", []):
+            yield "--iexclude-file"
+            yield fullyQualifiedPath(entry, True)
+
+        if group.get("excludeCaches", False):
+            yield "--exclude-caches"
+
+        if excludeSize := group.get("excludeLargerThan", ""):
+            # In case the user specifies a number with a suffix, this will probably be a number
+            # and an error should be thrown
+            if not isinstance(excludeSize, str):
+                printError(
+                    f"Option 'excludeLargerThan' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
+                )
+            yield "--exclude-larger-than"
+            yield excludeSize
+
+    # Emit basic include lines
+    for entry in includeList:
+        yield entry

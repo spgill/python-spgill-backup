@@ -9,8 +9,21 @@ class BackupLocation(typing.TypedDict, total=False):
 
 
 class BackupSourceDef(typing.TypedDict, total=False):
+    # Basic include args don't have flags they're just added at the end of the restic command
     include: list[str]
+
+    # Include arguments with flags
+    includeFilesFrom: str
+    includeFilesFromVerbatim: str
+
+    # Exclude arguments with flags
     exclude: list[str]
+    iexclude: list[str]
+    excludeIfPresent: list[str]
+    excludeFile: list[str]
+    iexcludeFile: list[str]
+    excludeCaches: bool
+    excludeLargerThan: str
 
 
 class BackupProfile(BackupSourceDef, total=False):
