@@ -65,10 +65,11 @@ def cli_run(
         "-g",
         help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
     ),
-    go: bool = typer.Option(
+    dry: bool = typer.Option(
         False,
-        "--go",
-        help="By default, this command operates in a 'dry-run' mode. This option will disable 'dry-run' mode and execute the backup process",
+        "--dry-run",
+        "-d",
+        help="Execute this backup as a 'dry run'. The full restic command will be printed to the console, but restic application will not be invoked. Good for testing that your profile is configured correctly.",
     ),
 ):
     config = ctx.obj
@@ -80,9 +81,9 @@ def cli_run(
     helper.printLine("Backup location:", locationName)
 
     # If in preview mode, print a warning
-    if not go:
+    if dry:
         helper.printWarning(
-            "Warning: Running in dry-run mode. Run tool again with '--go' option to execute backup."
+            "Warning: Running in dry-run mode. Run tool again without '--dry-run' or '-d' option to execute backup."
         )
 
     # Construct the restic args
@@ -96,16 +97,18 @@ def cli_run(
     ]
 
     # If this is the real deal, execute the backup
-    if go:
-        helper.printLine("Beginning backup...")
+    if not dry:
+        helper.printLine("Executing backup...")
         command.restic(
             args, _env=helper.getResticEnv(config, locationName), _fg=True
         )
 
     # If in preview mode, just print the joined args
     else:
-        helper.printLine("Restic command arguments:")
-        print(shlex.join([str(arg) for arg in args]))
+        helper.printLine("Restic environment:")
+        print(helper.getResticEnv(config, locationName))
+        helper.printLine("Restic command:")
+        print("restic " + shlex.join([str(arg) for arg in args]))
 
 
 @cli.command(
