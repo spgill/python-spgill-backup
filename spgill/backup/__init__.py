@@ -158,7 +158,8 @@ def cli_command(
 
     sys.stdout.write(
         shlex.join(
-            [
+            str(arg)
+            for arg in [
                 *envArgs,
                 "restic",
                 *helper.getBaseArgsForLocation(config, location),
