@@ -1,5 +1,4 @@
 # Stdlib imports
-import os
 import pathlib
 import re
 import shlex
@@ -127,14 +126,7 @@ def getResticEnv(
     locationName: str,
 ) -> dict:
     locationConf = getLocationConfig(config, locationName)
-
-    env = os.environ.copy()
-
-    # Inject any variables defined in the backup location's "env" attribute
-    if locationEnv := locationConf.get("env", None):
-        env.update(locationEnv)
-
-    return env
+    return locationConf.get("env", {})
 
 
 def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
