@@ -78,14 +78,28 @@ def getProfileConfig(
     return profileData
 
 
+# List of location option flags for both local and remote locations
+locationOptionNames = {
+    "repo": {"from": "--from-repo", "to": "--repo"},
+    "passwordFile": {"from": "--from-password-file", "to": "--password-file"},
+    "passwordCommand": {
+        "from": "--from-password-command",
+        "to": "--password-command",
+    },
+}
+
+
 def getBaseArgsForLocation(
-    config: schema.MasterBackupConfiguration, locationName: str
+    config: schema.MasterBackupConfiguration,
+    locationName: str,
+    fromRepo: bool = False,
 ) -> list[str]:
     locationConf = getLocationConfig(config, locationName)
+    optionKey = "from" if fromRepo else "to"
 
-    # Generate cache dir args
+    # Generate cache dir args (only for destination repos)
     cacheArgs = []
-    if cachePath := config.get("cache", None):
+    if not fromRepo and (cachePath := config.get("cache", None)):
         cacheArgs = ["--cache-dir", cachePath]
 
     # Generate password args
@@ -94,9 +108,15 @@ def getBaseArgsForLocation(
         passwordFilePath = fullyQualifiedPath(
             locationConf["passwordFile"], True
         )
-        passwordArgs = ["--password-file", passwordFilePath]
+        passwordArgs = [
+            locationOptionNames["passwordFile"][optionKey],
+            passwordFilePath,
+        ]
     elif "passwordCommand" in locationConf:
-        passwordArgs = ["--password-command", locationConf["passwordCommand"]]
+        passwordArgs = [
+            locationOptionNames["passwordCommand"][optionKey],
+            locationConf["passwordCommand"],
+        ]
     else:
         printWarning(
             f"Warning: No 'passwordCommand' or 'passwordFile' defined for backup location '{locationName}'"
@@ -106,7 +126,7 @@ def getBaseArgsForLocation(
     return [
         *cacheArgs,
         *passwordArgs,
-        "--repo",
+        locationOptionNames["repo"][optionKey],
         locationConf["path"],
     ]
 

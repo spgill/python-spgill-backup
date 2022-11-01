@@ -579,3 +579,43 @@ def cli_list(ctx: BackupCLIContext):
         helper.printKeyVal("Name", profileName)
         helper.printConfigData(profileConf)
         print()
+
+
+@cli.command(name="copy", help="Copy a snapshot from one location to another.")
+def cli_copy(
+    ctx: BackupCLIContext,
+    source: str = typer.Argument(
+        ..., help="Source location; where the snapshot will be copied FROM."
+    ),
+    destination: str = typer.Argument(
+        ..., help="Destination location; where the snapshot will be copied TO."
+    ),
+    snapshots: list[str] = typer.Argument(
+        ...,
+        min=1,
+        help="IDs of one or more snapshots to copy from the source to the destination.",
+    ),
+):
+    config = ctx.obj
+
+    if source == destination:
+        helper.printError(
+            "Error: Source and destination of copy can't be the same!"
+        )
+
+    # Assemble arguments for the command
+    sourceArgs = helper.getBaseArgsForLocation(config, source, True)
+    destinationArgs = helper.getBaseArgsForLocation(config, destination, False)
+    args = [*destinationArgs, "copy", *sourceArgs, *snapshots]
+
+    # Get env vars for the source and destination, and make sure there's no overlap
+    sourceEnv = helper.getResticEnv(config, source)
+    destinationEnv = helper.getResticEnv(config, destination)
+    intersection = [k for k in sourceEnv if k in destinationEnv]
+    if len(intersection) > 0:
+        helper.printError(
+            "Error: Source and destination location environment variables overlap. Consider copying to an intermediate location first."
+        )
+
+    # Execute the restic command
+    command.restic(args, _env={**sourceEnv, **destinationEnv}, _fg=True)
