@@ -30,6 +30,7 @@ class BackupProfile(BackupSourceDef, total=False):
     hostname: str
     archiveName: str
     location: str
+    retention: str
     tags: list[str]
     groups: dict[str, BackupSourceDef]
     args: list[str]
@@ -43,6 +44,7 @@ class ArchiveConfiguration(typing.TypedDict, total=False):
 class MasterBackupConfiguration(typing.TypedDict, total=False):
     v: int
     cache: str
+    policies: dict[str, str]
     locations: dict[str, BackupLocation]
     profiles: dict[str, BackupProfile]
     globalProfile: BackupProfile

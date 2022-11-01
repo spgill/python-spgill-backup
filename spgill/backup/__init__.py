@@ -199,6 +199,74 @@ def cli_snapshots(
 
 
 @cli.command(
+    name="forget",
+    help="Prune snapshots from a backup profile according to a retention policy.",
+)
+def cli_forget(
+    ctx: BackupCLIContext,
+    profile: str = typer.Argument(..., help="Name of the backup profile."),
+    policy: str = typer.Argument(
+        None,
+        help="Name of the snapshot retention policy. If empty, defaults to the default policy defined for the backup profile.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/",
+        "-n/",
+        help="Make no changes, only simulate the forget operation.",
+    ),
+    prune: bool = typer.Option(
+        False,
+        "--prune/",
+        "-p/",
+        help="After forgetting the snapshots, prune the storage location to clean up unused data. Generally a time consuming process.",
+    ),
+):
+    config = ctx.obj
+    profileConf = helper.getProfileConfig(config, profile)
+    locationName = profileConf["location"]
+
+    # Assemble arguments for the command
+    args = [
+        *helper.getBaseArgsForLocation(config, locationName),
+        "forget",
+        *helper.getHostnameArgs(profileConf),
+        *helper.getTagArgs(config, profile),
+        *helper.getRetentionPolicyArgs(config, profile, policy),
+    ]
+
+    # Add extra args
+    if dry_run:
+        args.append("--dry-run")
+    if prune:
+        args.append("--prune")
+
+    # Execute the command
+    command.restic(
+        args, _env=helper.getResticEnv(config, locationName), _fg=True
+    )
+
+
+@cli.command(
+    name="prune",
+    help="Prune a storage location of unused data packs.",
+)
+def cli_prune(
+    ctx: BackupCLIContext,
+    location: str = typer.Argument(
+        ..., help="Name of the backup location to use when executing restic."
+    ),
+):
+    config = ctx.obj
+
+    # Assemble arguments for the command
+    args = [*helper.getBaseArgsForLocation(config, location), "prune"]
+
+    # Execute the command
+    command.restic(args, _env=helper.getResticEnv(config, location), _fg=True)
+
+
+@cli.command(
     name="archive",
     help=f"""
     Extract and archive one or more snapshots from a backup location. Snapshots will be stored as ".tar" archives.

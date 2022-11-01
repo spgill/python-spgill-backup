@@ -2,6 +2,7 @@
 import os
 import pathlib
 import re
+import shlex
 import sys
 import typing
 
@@ -229,3 +230,31 @@ def getHostnameArgs(profile: schema.BackupProfile) -> list[str]:
     if hostname := profile.get("hostname", None):
         return ["--host", hostname]
     return []
+
+
+def getRetentionPolicyArgs(
+    config: schema.MasterBackupConfiguration,
+    profileName: str,
+    policyName: typing.Optional[str],
+) -> list[str]:
+    # Make sure the policies dict exists
+    if "policies" not in config:
+        printError(
+            "Error: No retention policies found in the config file. Please check the contents of the config."
+        )
+
+    # If not policy name was given, try to default to what was defined as default for the profile
+    if not policyName:
+        profileConf = getProfileConfig(config, profileName)
+        if not (policyName := profileConf.get("retention", None)):
+            printError(
+                f"Error: No default retention policy defined for profile '{profileName}'. Please amend the config or specify one in the command."
+            )
+
+    # Print error if the policy cannot be found
+    if policyName not in config["policies"]:
+        printError(
+            f"Error: Could not find retention policy named '{policyName}'"
+        )
+
+    return shlex.split(config["policies"][policyName])
