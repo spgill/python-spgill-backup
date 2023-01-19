@@ -1,4 +1,5 @@
 # Stdlib imports
+import os
 import pathlib
 import re
 import shlex
@@ -8,6 +9,7 @@ import typing
 # Vendor imports
 from colorama import Fore, Style
 import humanize
+import sh
 import yaml
 
 # Local imports
@@ -74,6 +76,14 @@ def getProfileConfig(
     # Ensure there is a location
     if "location" not in profileData:
         printError(f"Error: No location defined for profile '{name}'")
+
+    # Normalize the location to an array
+    if isinstance(profileData["location"], str):
+        profileData["_locations"] = [
+            profileData["location"],
+        ]
+    else:
+        profileData["_locations"] = profileData["location"]
 
     return profileData
 
@@ -270,3 +280,39 @@ def getRetentionPolicyArgs(
         )
 
     return shlex.split(config["policies"][policyName])
+
+
+def maximizeNiceness():
+    os.nice(20)
+
+
+def runCommandPolitely(
+    command: sh.Command, args: list[typing.Any], env: dict = {}
+):
+    # Make a full copy of the process environment and layer the argument
+    # env on top
+    fullEnv = os.environ.copy()
+    fullEnv.update(env)
+
+    # Start the command
+    runningProcess = command(
+        *args,
+        _preexec_fn=maximizeNiceness,
+        _bg=True,
+        _env=fullEnv,
+        _out=sys.stdout,
+        _err=sys.stderr,
+        _tee=True,
+    )
+
+    # Wait for it to finish and catch any keyboard interrupts
+    try:
+        runningProcess.wait()
+    except KeyboardInterrupt:
+        print("---------- Keyboard interrupt detected")
+        if runningProcess.is_alive():
+            print("---------- Killing the running process...")
+            runningProcess.kill()
+        exit()
+
+    return runningProcess

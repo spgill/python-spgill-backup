@@ -29,11 +29,14 @@ class BackupSourceDef(typing.TypedDict, total=False):
 class BackupProfile(BackupSourceDef, total=False):
     hostname: str
     archiveName: str
-    location: str
+    location: typing.Union[str, list[str]]
     retention: str
     tags: list[str]
     groups: dict[str, BackupSourceDef]
     args: list[str]
+
+    # Private attributes
+    _locations: list[str]
 
 
 class ArchiveConfiguration(typing.TypedDict, total=False):

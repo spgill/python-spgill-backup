@@ -2,6 +2,7 @@
 import datetime
 import json
 import pathlib
+import re
 import shlex
 import shutil
 import sys
@@ -65,30 +66,37 @@ def cli_run(
         "-g",
         help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
     ),
-    dry: bool = typer.Option(
+    noCopy: bool = typer.Option(
         False,
-        "--dry-run",
-        "-d",
-        help="Execute this backup as a 'dry run'. The full restic command will be printed to the console, but restic application will not be invoked. Good for testing that your profile is configured correctly.",
+        "--no-copy/",
+        "-n/",
+        help="Disable copying the resulting snapshot to secondary locations, if defined.",
+    ),
+    locations_override: typing.Optional[list[str]] = typer.Option(
+        None,
+        "--location",
+        "-l",
+        help="Manually specify backup location(s). You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile. Implies the '--no-copy' option.",
     ),
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationName = profileConf["location"]
+    locations = locations_override or profileConf["_locations"]
+    primaryLocationName = locations[0]
+
+    # If location overrides were provided, infer the no copy option
+    if locations_override:
+        noCopy = True
 
     # Get the repo's data
     helper.printLine("Chosen profile:", profile)
-    helper.printLine("Backup location:", locationName)
-
-    # If in preview mode, print a warning
-    if dry:
-        helper.printWarning(
-            "Warning: Running in dry-run mode. Run tool again without '--dry-run' or '-d' option to execute backup."
-        )
+    helper.printLine("Primary location:", primaryLocationName)
+    if len(locations) > 1:
+        helper.printLine("Secondary locations:", ", ".join(locations[1:]))
 
     # Construct the restic args
     args = [
-        *helper.getBaseArgsForLocation(config, locationName),
+        *helper.getBaseArgsForLocation(config, primaryLocationName),
         "backup",
         *helper.getHostnameArgs(profileConf),
         *helper.getTagArgs(config, profile),
@@ -96,19 +104,50 @@ def cli_run(
         *profileConf.get("args", []),
     ]
 
-    # If this is the real deal, execute the backup
-    if not dry:
-        helper.printLine("Executing backup...")
-        command.restic(
-            args, _env=helper.getResticEnv(config, locationName), _fg=True
+    # Execute the backup and parse out the saved snapshot ID
+    helper.printLine("Executing backup...")
+    primaryLocationEnv = helper.getResticEnv(config, primaryLocationName)
+    backupProc = helper.runCommandPolitely(
+        command.restic, args, primaryLocationEnv
+    )
+    snapshotMatch = re.search(
+        r"snapshot (\w+) saved", backupProc.stdout.decode()
+    )
+    if not snapshotMatch:
+        helper.printError("Error: Unable to parse the saved snapshot.")
+    primarySnapshot = snapshotMatch.group(1)
+
+    # If there are secondary locations and copying is enabled, begin copying the snapshot
+    if len(locations) > 1 and not noCopy:
+        helper.printLine("Copying snapshot to secondary locations")
+        copySourceArgs = helper.getBaseArgsForLocation(
+            config, primaryLocationName, True
         )
 
-    # If in preview mode, just print the joined args
-    else:
-        helper.printLine("Restic environment:")
-        print(helper.getResticEnv(config, locationName))
-        helper.printLine("Restic command:")
-        print("restic " + shlex.join([str(arg) for arg in args]))
+        for secondaryLocationName in locations[1:]:
+            helper.printNestedLine(f"Copying to '{secondaryLocationName}'...")
+            copyDestArgs = helper.getBaseArgsForLocation(
+                config, secondaryLocationName, False
+            )
+            copyArgs = [
+                *copyDestArgs,
+                "copy",
+                *copySourceArgs,
+                primarySnapshot,
+            ]
+
+            # Get env vars for the destination, and make sure there's no overlap
+            copyDestEnv = helper.getResticEnv(config, secondaryLocationName)
+            intersection = [k for k in primaryLocationEnv if k in copyDestEnv]
+            if len(intersection) > 0:
+                helper.printError(
+                    "Error: Destination location environment variables overlap with primary location. Copy cannot be performed."
+                )
+
+            # Execute the copy
+            helper.runCommandPolitely(
+                command.restic, copyArgs, {**primaryLocationEnv, **copyDestEnv}
+            )
 
 
 @cli.command(
@@ -173,12 +212,22 @@ def cli_command(
 )
 def cli_snapshots(
     ctx: BackupCLIContext,
-    profile: str = typer.Argument(..., help="Name of the backup profile."),
+    profile: str = typer.Argument(
+        ...,
+        help="Name of the backup profile. Executes on the first location defined in the backup profile.",
+    ),
     json: bool = typer.Option(False, "--json/", help="Enable JSON output."),
+    location_override: typing.Optional[str] = typer.Option(
+        None,
+        "--location",
+        "-l",
+        help="Manually specify a backup location. Location does not have to be defined as a part of the backup profile.",
+    ),
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationName = profileConf["location"]
+    locationList = profileConf["_locations"]
+    locationName = location_override or locationList[0]
 
     # Assemble arguments for the command
     args = [
@@ -200,12 +249,12 @@ def cli_snapshots(
 
 @cli.command(
     name="forget",
-    help="Prune snapshots from a backup profile according to a retention policy.",
+    help="Remove snapshots from a backup profile individually or according to a retention policy. By default, will be applied to all location defined in the backup profile.",
 )
 def cli_forget(
     ctx: BackupCLIContext,
     profile: str = typer.Argument(..., help="Name of the backup profile."),
-    policy: str = typer.Argument(
+    policy: typing.Optional[str] = typer.Argument(
         None,
         help="Name of the snapshot retention policy. If empty, defaults to the default policy defined for the backup profile.",
     ),
@@ -221,30 +270,37 @@ def cli_forget(
         "-p/",
         help="After forgetting the snapshots, prune the storage location to clean up unused data. Generally a time consuming process.",
     ),
+    locations_override: typing.Optional[list[str]] = typer.Option(
+        None,
+        "--location",
+        "-l",
+        help="Manually specify a backup location to apply retention policy to. You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile.",
+    ),
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationName = profileConf["location"]
+    locationsList = locations_override or profileConf["_locations"]
 
-    # Assemble arguments for the command
-    args = [
-        *helper.getBaseArgsForLocation(config, locationName),
-        "forget",
-        *helper.getHostnameArgs(profileConf),
-        *helper.getTagArgs(config, profile),
-        *helper.getRetentionPolicyArgs(config, profile, policy),
-    ]
+    for locationName in locationsList:
+        # Assemble arguments for the command
+        args = [
+            *helper.getBaseArgsForLocation(config, locationName),
+            "forget",
+            *helper.getHostnameArgs(profileConf),
+            *helper.getTagArgs(config, profile),
+            *helper.getRetentionPolicyArgs(config, profile, policy),
+        ]
 
-    # Add extra args
-    if dry_run:
-        args.append("--dry-run")
-    if prune:
-        args.append("--prune")
+        # Add extra args
+        if dry_run:
+            args.append("--dry-run")
+        if prune:
+            args.append("--prune")
 
-    # Execute the command
-    command.restic(
-        args, _env=helper.getResticEnv(config, locationName), _fg=True
-    )
+        # Execute the command
+        helper.runCommandPolitely(
+            command.restic, args, helper.getResticEnv(config, locationName)
+        )
 
 
 @cli.command(
@@ -263,7 +319,9 @@ def cli_prune(
     args = [*helper.getBaseArgsForLocation(config, location), "prune"]
 
     # Execute the command
-    command.restic(args, _env=helper.getResticEnv(config, location), _fg=True)
+    helper.runCommandPolitely(
+        command.restic, args, helper.getResticEnv(config, location)
+    )
 
 
 @cli.command(
