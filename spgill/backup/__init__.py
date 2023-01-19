@@ -81,7 +81,7 @@ def cli_run(
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locations = locations_override or profileConf["_locations"]
+    locations = locations_override or profileConf.get("_locations", [])
     primaryLocationName = locations[0]
 
     # If location overrides were provided, infer the no copy option
@@ -110,6 +110,9 @@ def cli_run(
     backupProc = helper.runCommandPolitely(
         command.restic, args, primaryLocationEnv
     )
+    if backupProc is None:
+        helper.printError("Unknown error in execution of backup")
+
     snapshotMatch = re.search(
         r"snapshot (\w+) saved", backupProc.stdout.decode()
     )
@@ -226,7 +229,7 @@ def cli_snapshots(
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationList = profileConf["_locations"]
+    locationList = profileConf.get("_locations", [])
     locationName = location_override or locationList[0]
 
     # Assemble arguments for the command
@@ -279,7 +282,7 @@ def cli_forget(
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationsList = locations_override or profileConf["_locations"]
+    locationsList = locations_override or profileConf.get("_locations", [])
 
     for locationName in locationsList:
         # Assemble arguments for the command
@@ -326,10 +329,10 @@ def cli_prune(
 
 @cli.command(
     name="archive",
-    help=f"""
+    help="""
     Extract and archive one or more snapshots from a backup location. Snapshots will be stored as ".tar" archives.
 
-    {Fore.YELLOW}WARNING{Style.RESET_ALL}: Only designed to work in a Linux/macOS environment.
+    WARNING: Only designed to work in a Linux/macOS environment.
     """,
 )
 def cli_archive(
@@ -338,6 +341,12 @@ def cli_archive(
         ..., help="Destination directory for the archive file."
     ),
     profile: str = typer.Argument(..., help="Name of the backup profile."),
+    locationOverride: typing.Optional[str] = typer.Option(
+        None,
+        "--location",
+        "-l",
+        help="Name of location to query for the snapshot. Defaults to the primary location defined in the backup profile.",
+    ),
     snapshots: list[str] = typer.Argument(
         ...,
         help="List of snapshot ID's to archive. 'latest' is valid and refers to the latest snapshot.",
@@ -357,8 +366,8 @@ def cli_archive(
 ):
     config = ctx.obj
     profileConf = helper.getProfileConfig(config, profile)
-    locationName = profileConf["location"]
-    # locationConf = helper.getLocationConfig(locationName)
+    locations = profileConf.get("_locations", [])
+    locationName = locationOverride or locations[0]
 
     # Pull archive configuration out of larger configuration structure
     archiveConf = config.get("archive", {})
@@ -420,6 +429,8 @@ def cli_archive(
             "--json",
         ]
         snapsCommand = command.restic(snapsArgs, _env=locationEnv)
+        if snapsCommand is None:
+            helper.printError("Error querying snaphots. Exiting.")
         if b"null" in snapsCommand.stdout:
             helper.printError(f"Could not find snapshot: '{snapshotName}'")
         latest = json.loads(snapsCommand.stdout)[0]
@@ -458,6 +469,8 @@ def cli_archive(
         helper.printNestedLine("Querying snapshot size...")
         statsArgs = [*locationArgs, "--quiet", "stats", latest["id"], "--json"]
         statsCommand = command.restic(statsArgs, _env=locationEnv)
+        if statsCommand is None:
+            helper.printError("Error querying snaphot statistics. Exiting.")
         latestSize = json.loads(statsCommand.stdout)["total_size"]
         helper.printNestedLine(
             f"Archive should be no larger than (approx.) {helper.humanReadable(latestSize)}"
@@ -526,6 +539,9 @@ def cli_archive(
                 _out=str(archiveCacheFile),
             )
 
+        if dumpCommand is None:
+            helper.printError("Error creating archive. Exiting.")
+
         # Detect dump errors
         if dumpCommand.exit_code != 0:
             helper.printError(
@@ -541,6 +557,11 @@ def cli_archive(
                 _out=str(archiveDestFile),
                 _err=sys.stderr,
             )
+
+            if copyCommand is None:
+                helper.printError(
+                    "Error copying archive to final destination. Exiting."
+                )
 
             # After copying the dump to the destination, remove the cached dump file
             if copyCommand.exit_code != 0:
@@ -619,20 +640,22 @@ def cli_list(ctx: BackupCLIContext):
     config = ctx.obj
 
     # Locations
-    helper.printLine(f"Locations: {', '.join(config['locations'].keys())}")
-    for locationName, locationConf in config["locations"].items():
+    globalLocations = config.get("locations", {})
+    helper.printLine(f"Locations: {', '.join(globalLocations.keys())}")
+    for locationName, locationConf in globalLocations.items():
         helper.printKeyVal("Name", locationName)
         helper.printConfigData(locationConf)
         print()
 
     # Profiles
-    helper.printLine(f"Profiles: {', '.join(config['profiles'].keys())}")
+    globalProfiles = config.get("profiles", {})
+    helper.printLine(f"Profiles: {', '.join(globalProfiles.keys())}")
     for profileName, profileConf in [
         (
             f"{Fore.RED}globalProfile{Style.RESET_ALL}",
             config.get("globalProfile", {}),
         ),
-        *config["profiles"].items(),
+        *globalProfiles.items(),
     ]:
         helper.printKeyVal("Name", profileName)
         helper.printConfigData(profileConf)
