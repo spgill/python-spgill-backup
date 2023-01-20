@@ -640,22 +640,22 @@ def cli_list(ctx: BackupCLIContext):
     config = ctx.obj
 
     # Locations
-    globalLocations = config.get("locations", {})
-    helper.printLine(f"Locations: {', '.join(globalLocations.keys())}")
-    for locationName, locationConf in globalLocations.items():
+    locations = config.get("locations", {})
+    helper.printLine(f"Locations: {', '.join(locations.keys())}")
+    for locationName, locationConf in locations.items():
         helper.printKeyVal("Name", locationName)
         helper.printConfigData(locationConf)
         print()
 
     # Profiles
-    globalProfiles = config.get("profiles", {})
-    helper.printLine(f"Profiles: {', '.join(globalProfiles.keys())}")
+    profiles = config.get("profiles", {})
+    helper.printLine(f"Profiles: {', '.join(profiles.keys())}")
     for profileName, profileConf in [
         (
             f"{Fore.RED}globalProfile{Style.RESET_ALL}",
             config.get("globalProfile", {}),
         ),
-        *globalProfiles.items(),
+        *profiles.items(),
     ]:
         helper.printKeyVal("Name", profileName)
         helper.printConfigData(profileConf)
