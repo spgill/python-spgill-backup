@@ -12,6 +12,7 @@ import typing
 # Vendor imports
 import colorama
 from colorama import Fore, Style
+import sh
 
 # Local imports
 from . import helper, command, config as applicationConfig, schema
@@ -107,9 +108,16 @@ def cli_run(
     # Execute the backup and parse out the saved snapshot ID
     helper.printLine("Executing backup...")
     primaryLocationEnv = helper.getResticEnv(config, primaryLocationName)
-    backupProc = helper.runCommandPolitely(
-        command.restic, args, primaryLocationEnv
-    )
+
+    backupProc = None
+    try:
+        backupProc = helper.runCommandPolitely(
+            command.restic, args, primaryLocationEnv
+        )
+    except sh.ErrorReturnCode as error:
+        if error.exit_code == 3:
+            pass
+
     if backupProc is None or isinstance(backupProc, str):
         helper.printError("Unknown error in execution of backup")
 
