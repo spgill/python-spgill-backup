@@ -110,11 +110,12 @@ def cli_run(
     backupProc = helper.runCommandPolitely(
         command.restic, args, primaryLocationEnv
     )
-    if backupProc is None:
+    if backupProc is None or isinstance(backupProc, str):
         helper.printError("Unknown error in execution of backup")
 
-    assert isinstance(backupProc, str)
-    snapshotMatch = re.search(r"snapshot (\w+) saved", backupProc)
+    snapshotMatch = re.search(
+        r"snapshot (\w+) saved", backupProc.stdout.decode()
+    )
     if not snapshotMatch:
         helper.printError("Error: Unable to parse the saved snapshot.")
     primarySnapshot = snapshotMatch.group(1)
