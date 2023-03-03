@@ -1,5 +1,4 @@
 # Stdlib imports
-import os
 import pathlib
 
 # Vendor imports
@@ -15,13 +14,9 @@ _defaultConfig: schema.MasterBackupConfiguration = {
 }
 
 
-def getDefaultConfigPath() -> str:
-    return os.environ.get("SPGILL_BACKUP_CONFIG", "~/.spgill.backup.yaml")
-
-
 # Return the config values in the config file
 def loadConfigValues(
-    configPath: pathlib.Path = None,
+    configPath: pathlib.Path,
 ) -> schema.MasterBackupConfiguration:
     # Resolve the path string to a path object
     configPath = configPath.expanduser()
