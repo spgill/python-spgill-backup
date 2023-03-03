@@ -6,6 +6,7 @@ class BackupLocation(typing.TypedDict, total=False):
     passwordFile: str
     passwordCommand: str
     env: dict[str, str]
+    cleanEnv: dict[str, str]
 
 
 class BackupSourceDef(typing.TypedDict, total=False):

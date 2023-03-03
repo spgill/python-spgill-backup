@@ -156,7 +156,13 @@ def getResticEnv(
     locationName: str,
 ) -> dict:
     locationConf = getLocationConfig(config, locationName)
-    return locationConf.get("env", {})
+
+    # If "cleanEnv" property is used, we will start with a clean environment
+    if "cleanEnv" in locationConf:
+        return locationConf["cleanEnv"]
+
+    # Else, we will augment the execution environment with the "env" property (if defined)
+    return {**dict(os.environ), **locationConf.get("env", {})}
 
 
 def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
