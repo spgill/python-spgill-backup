@@ -1,0 +1,10 @@
+# Development dependencies
+black
+
+# Package dependencies
+click
+colorama
+humanize
+PyYAML
+sh >= 2.0
+typer
