@@ -113,9 +113,8 @@ def cli_run(
     if backupProc is None:
         helper.printError("Unknown error in execution of backup")
 
-    snapshotMatch = re.search(
-        r"snapshot (\w+) saved", backupProc.stdout.decode()
-    )
+    assert isinstance(backupProc, str)
+    snapshotMatch = re.search(r"snapshot (\w+) saved", backupProc)
     if not snapshotMatch:
         helper.printError("Error: Unable to parse the saved snapshot.")
     primarySnapshot = snapshotMatch.group(1)
@@ -431,9 +430,10 @@ def cli_archive(
         snapsCommand = command.restic(snapsArgs, _env=locationEnv)
         if snapsCommand is None:
             helper.printError("Error querying snaphots. Exiting.")
-        if b"null" in snapsCommand.stdout:
+        assert isinstance(snapsCommand, str)
+        if "null" in snapsCommand:
             helper.printError(f"Could not find snapshot: '{snapshotName}'")
-        latest = json.loads(snapsCommand.stdout)[0]
+        latest = json.loads(snapsCommand)[0]
 
         # Convert the timestamp to a datetime object
         # Requires the we first round off the milliseconds to three decimal places
@@ -471,7 +471,8 @@ def cli_archive(
         statsCommand = command.restic(statsArgs, _env=locationEnv)
         if statsCommand is None:
             helper.printError("Error querying snaphot statistics. Exiting.")
-        latestSize = json.loads(statsCommand.stdout)["total_size"]
+        assert isinstance(statsCommand, str)
+        latestSize = json.loads(statsCommand)["total_size"]
         helper.printNestedLine(
             f"Archive should be no larger than (approx.) {helper.humanReadable(latestSize)}"
         )
@@ -542,12 +543,6 @@ def cli_archive(
         if dumpCommand is None:
             helper.printError("Error creating archive. Exiting.")
 
-        # Detect dump errors
-        if dumpCommand.exit_code != 0:
-            helper.printError(
-                f"Restic dump command returned with error code {dumpCommand.exit_code}. Aborting."
-            )
-
         # Copy the dump archive to the destination, if cache was enabled
         if cacheEnabled:
             helper.printNestedLine("Moving archive to final destination...")
@@ -563,11 +558,6 @@ def cli_archive(
                     "Error copying archive to final destination. Exiting."
                 )
 
-            # After copying the dump to the destination, remove the cached dump file
-            if copyCommand.exit_code != 0:
-                helper.printError(
-                    f"Copy command returned with error code {copyCommand.exit_code}. Aborting."
-                )
             archiveCacheFile.unlink()
 
         # Print success message for this repo
