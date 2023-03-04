@@ -25,16 +25,13 @@ class BackupCLIContext(typer.Context):
 # Initialize the typer app
 cli = typer.Typer()
 
-# Default configuration file path
-defaultConfigPath = pathlib.Path("~/.spgill.backup.yaml")
-
 
 # Main method that initializes the configuration and makes it available to all commands
 @cli.callback()
 def cli_main(
     ctx: BackupCLIContext,
     config: pathlib.Path = typer.Option(
-        defaultConfigPath,
+        applicationConfig.defaultConfigPath,
         envvar="SPGILL_BACKUP_CONFIG",
         help="Path to backup configuration file.",
     ),

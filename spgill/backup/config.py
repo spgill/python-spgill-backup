@@ -7,6 +7,9 @@ import yaml
 # Local imports
 from . import helper, model
 
+# Default configuration file path exists in the user's home dir
+defaultConfigPath = pathlib.Path("~/.spgill.backup.yaml")
+
 _defaultConfig: model.MasterBackupConfiguration = {
     "v": 2,
     "locations": {},
