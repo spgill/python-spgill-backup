@@ -293,7 +293,10 @@ def maximizeNiceness():
 
 
 def runCommandPolitely(
-    command: sh.Command, args: list[typing.Any], env: dict = {}
+    command: sh.Command,
+    args: list[typing.Any],
+    env: dict = {},
+    okCodes: list[int] = [0],
 ):
     # Make a full copy of the process environment and layer the argument
     # env on top
@@ -309,6 +312,7 @@ def runCommandPolitely(
         _out=sys.stdout,
         _err=sys.stderr,
         _tee=True,
+        _ok_code=okCodes,
     )
 
     # Wait for it to finish and catch any keyboard interrupts
