@@ -5,9 +5,9 @@ import pathlib
 import yaml
 
 # Local imports
-from . import helper, schema
+from . import helper, model
 
-_defaultConfig: schema.MasterBackupConfiguration = {
+_defaultConfig: model.MasterBackupConfiguration = {
     "v": 2,
     "locations": {},
     "profiles": {},
@@ -17,7 +17,7 @@ _defaultConfig: schema.MasterBackupConfiguration = {
 # Return the config values in the config file
 def loadConfigValues(
     configPath: pathlib.Path,
-) -> schema.MasterBackupConfiguration:
+) -> model.MasterBackupConfiguration:
     # Resolve the path string to a path object
     configPath = configPath.expanduser()
 
@@ -27,7 +27,7 @@ def loadConfigValues(
             yaml.dump(_defaultConfig, handle)
 
     # Open and decode the config file
-    values: schema.MasterBackupConfiguration = {}
+    values: model.MasterBackupConfiguration = {}
     with configPath.open("r") as handle:
         values = yaml.load(handle, Loader=yaml.SafeLoader)
         if values["v"] < _defaultConfig["v"]:

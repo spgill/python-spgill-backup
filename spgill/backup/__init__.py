@@ -14,12 +14,12 @@ import colorama
 from colorama import Fore, Style
 
 # Local imports
-from . import helper, command, config as applicationConfig, schema
+from . import helper, command, config as applicationConfig, model
 
 
 # Create a subclass of the context with correct typing of the backup config object
 class BackupCLIContext(typer.Context):
-    obj: schema.MasterBackupConfiguration
+    obj: model.MasterBackupConfiguration
 
 
 # Initialize the typer app

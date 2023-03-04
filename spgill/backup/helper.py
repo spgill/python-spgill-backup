@@ -13,7 +13,7 @@ import sh
 import yaml
 
 # Local imports
-from . import schema
+from . import model
 
 
 def fixTimestamp(t: str) -> str:
@@ -55,8 +55,8 @@ def humanReadable(num):
 
 
 def getLocationConfig(
-    config: schema.MasterBackupConfiguration, name: str
-) -> schema.BackupLocation:
+    config: model.MasterBackupConfiguration, name: str
+) -> model.BackupLocation:
     locations = config.get("locations", {})
 
     if not (locationData := locations.get(name, None)):
@@ -66,8 +66,8 @@ def getLocationConfig(
 
 
 def getProfileConfig(
-    config: schema.MasterBackupConfiguration, name: str
-) -> schema.BackupProfile:
+    config: model.MasterBackupConfiguration, name: str
+) -> model.BackupProfile:
     profiles = config.get("profiles", {})
 
     if not (profileData := profiles.get(name, None)):
@@ -100,7 +100,7 @@ locationOptionNames = {
 
 
 def getBaseArgsForLocation(
-    config: schema.MasterBackupConfiguration,
+    config: model.MasterBackupConfiguration,
     locationName: str,
     fromRepo: bool = False,
 ) -> list[str]:
@@ -137,12 +137,12 @@ def getBaseArgsForLocation(
         *cacheArgs,
         *passwordArgs,
         locationOptionNames["repo"][optionKey],
-        locationConf["path"],
+        locationConf.get("path", ""),
     ]
 
 
 def getTagArgs(
-    config: schema.MasterBackupConfiguration,
+    config: model.MasterBackupConfiguration,
     profileName: str,
 ) -> list[str]:
     profile = getProfileConfig(config, profileName)
@@ -152,7 +152,7 @@ def getTagArgs(
 
 
 def getResticEnv(
-    config: schema.MasterBackupConfiguration,
+    config: model.MasterBackupConfiguration,
     locationName: str,
 ) -> dict:
     locationConf = getLocationConfig(config, locationName)
@@ -165,7 +165,9 @@ def getResticEnv(
     return {**dict(os.environ), **locationConf.get("env", {})}
 
 
-def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
+def fullyQualifiedPath(
+    pathStr: str, ensureExists: bool = False
+) -> pathlib.Path:
     path = pathlib.Path(pathStr).expanduser().absolute()
     if ensureExists and not path.exists():
         printError(f"File path '{path}' (from '{pathStr}') does not exist")
@@ -173,16 +175,14 @@ def fullyQualifiedPath(pathStr: str, ensureExists: False) -> pathlib.Path:
 
 
 def getIncludeExcludeArgs(
-    config: schema.MasterBackupConfiguration,
+    config: model.MasterBackupConfiguration,
     profileName: str,
     selectedGroupNames: typing.Sequence[str],
 ) -> typing.Generator[str, None, None]:
     profile = getProfileConfig(config, profileName)
 
     # Collate list of backup groups (including the base and global profiles)
-    selectedGroups: list[schema.BackupSourceDef] = profile.get(
-        "groups", {}
-    ).values()
+    selectedGroups = profile.get("groups", {}).values()
     if selectedGroupNames:
         selectedGroups = [
             group
@@ -190,7 +190,7 @@ def getIncludeExcludeArgs(
             if groupName in selectedGroupNames
         ]
 
-    finalGroups: list[schema.BackupSourceDef] = [
+    finalGroups: list[model.BackupSourceDef] = [
         config.get("globalProfile", {}),
         profile,
         *selectedGroups,
@@ -209,11 +209,11 @@ def getIncludeExcludeArgs(
         # Process various include files flags
         for entry in group.get("includeFilesFrom", []):
             yield "--files-from"
-            yield fullyQualifiedPath(entry, True)
+            yield str(fullyQualifiedPath(entry, True))
 
         for entry in group.get("includeFilesFromVerbatim", []):
             yield "--files-from-verbatim"
-            yield fullyQualifiedPath(entry, True)
+            yield str(fullyQualifiedPath(entry, True))
 
         # Process various exlude file flags
         for entry in group.get("exclude", []):
@@ -230,11 +230,11 @@ def getIncludeExcludeArgs(
 
         for entry in group.get("excludeFile", []):
             yield "--exclude-file"
-            yield fullyQualifiedPath(entry, True)
+            yield str(fullyQualifiedPath(entry, True))
 
         for entry in group.get("iexcludeFile", []):
             yield "--iexclude-file"
-            yield fullyQualifiedPath(entry, True)
+            yield str(fullyQualifiedPath(entry, True))
 
         if group.get("excludeCaches", False):
             yield "--exclude-caches"
@@ -254,14 +254,14 @@ def getIncludeExcludeArgs(
         yield entry
 
 
-def getHostnameArgs(profile: schema.BackupProfile) -> list[str]:
+def getHostnameArgs(profile: model.BackupProfile) -> list[str]:
     if hostname := profile.get("hostname", None):
         return ["--host", hostname]
     return []
 
 
 def getRetentionPolicyArgs(
-    config: schema.MasterBackupConfiguration,
+    config: model.MasterBackupConfiguration,
     profileName: str,
     policyName: typing.Optional[str],
 ) -> list[str]:
@@ -314,6 +314,9 @@ def runCommandPolitely(
         _tee=True,
         _ok_code=okCodes,
     )
+
+    # The running process should not be a string
+    assert isinstance(runningProcess, sh.RunningCommand)
 
     # Wait for it to finish and catch any keyboard interrupts
     try:
