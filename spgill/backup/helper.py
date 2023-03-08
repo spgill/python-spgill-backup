@@ -120,7 +120,7 @@ def getBaseArgsForLocation(
         )
         passwordArgs = [
             locationOptionNames["passwordFile"][optionKey],
-            passwordFilePath,
+            str(passwordFilePath),
         ]
     elif "passwordCommand" in locationConf:
         passwordArgs = [
