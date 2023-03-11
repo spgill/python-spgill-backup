@@ -10,8 +10,9 @@ import typer
 import typing
 
 # Vendor imports
-import colorama
-from colorama import Fore, Style
+import apscheduler.executors.pool
+import apscheduler.schedulers.blocking
+import apscheduler.triggers.cron
 
 # Local imports
 from . import helper, command, config as applicationConfig, model
@@ -19,7 +20,7 @@ from . import helper, command, config as applicationConfig, model
 
 # Create a subclass of the context with correct typing of the backup config object
 class BackupCLIContext(typer.Context):
-    obj: model.MasterBackupConfiguration
+    obj: model.RootBackupConfiguration
 
 
 # Initialize the typer app
@@ -36,34 +37,21 @@ def cli_main(
         help="Path to backup configuration file.",
     ),
 ):
-    # Initialize colorama (for windows)
-    colorama.init()
-
     # Load the config options and insert it into the context object
     ctx.obj = applicationConfig.loadConfigValues(config)
-
-    # If there are no backup locations defined, print error message and exit
-    if not len(ctx.obj.get("locations", {}).keys()):
-        helper.printError("Error: No backup locations defined in config")
-
-    # If there are no backup profiles defined, print error message and exit
-    if not len(ctx.obj.get("profiles", {}).keys()):
-        helper.printError("Error: No backup profiles defined in config")
 
 
 @cli.command(name="run", help="Execute a backup profile now.")
 def cli_run(
     ctx: BackupCLIContext,
-    profile: str = typer.Argument(
-        ..., help="Name of the backup profile to use."
-    ),
+    name: str = typer.Argument(..., help="Name of the backup profile to use."),
     groups: list[str] = typer.Option(
         [],
         "--group",
         "-g",
         help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
     ),
-    noCopy: bool = typer.Option(
+    no_copy: bool = typer.Option(
         False,
         "--no-copy/",
         "-n/",
@@ -77,56 +65,65 @@ def cli_run(
     ),
 ):
     config = ctx.obj
-    profileConf = helper.getProfileConfig(config, profile)
-    locations = locations_override or profileConf.get("_locations", [])
-    primaryLocationName = locations[0]
+
+    profile = helper.get_profile(config, name)
+    assert profile.policy
+    policy = helper.get_policy(config, profile.policy)
+
+    locations = helper.get_policy_locations(policy)
+    primary_location_name = locations[0]
 
     # If location overrides were provided, infer the no copy option
     if locations_override:
-        noCopy = True
+        no_copy = True
 
     # Get the repo's data
-    helper.printLine("Chosen profile:", profile)
-    helper.printLine("Primary location:", primaryLocationName)
+    helper.print_line(f"Starting at {datetime.datetime.now()}")
+    helper.print_line(f"Chosen profile: {name}")
+    helper.print_line(f"Primary location: {primary_location_name}")
     if len(locations) > 1:
-        helper.printLine("Secondary locations:", ", ".join(locations[1:]))
+        helper.print_line("Secondary locations:", ", ".join(locations[1:]))
 
     # Construct the restic args
     args = [
-        *helper.getBaseArgsForLocation(config, primaryLocationName),
+        *helper.get_location_arguments(config, primary_location_name),
         "backup",
-        *helper.getHostnameArgs(profileConf),
-        *helper.getTagArgs(config, profile),
-        *helper.getIncludeExcludeArgs(config, profile, groups),
-        *profileConf.get("args", []),
+        *helper.get_hostname_arguments(profile),
+        *helper.get_tag_arguments(config, name),
+        *helper.get_inclusion_arguments(config, name, groups),
+        *(profile.args or []),
     ]
 
     # Execute the backup and parse out the saved snapshot ID
-    helper.printLine("Executing backup...")
-    primaryLocationEnv = helper.getResticEnv(config, primaryLocationName)
-    backupProc = helper.runCommandPolitely(
+    helper.print_line("Executing backup...")
+    primaryLocationEnv = helper.get_execution_env(
+        config, primary_location_name
+    )
+    backupProc = helper.run_command_politely(
         command.restic, args, primaryLocationEnv, [0, 3]
     )
     if backupProc is None or isinstance(backupProc, str):
-        helper.printError("Unknown error in execution of backup")
+        helper.print_error("Unknown error in execution of backup")
 
     snapshotMatch = re.search(
         r"snapshot (\w+) saved", backupProc.stdout.decode()
     )
     if not snapshotMatch:
-        helper.printError("Error: Unable to parse the saved snapshot.")
+        helper.print_error("Error: Unable to parse the saved snapshot.")
     primarySnapshot = snapshotMatch.group(1)
 
     # If there are secondary locations and copying is enabled, begin copying the snapshot
-    if len(locations) > 1 and not noCopy:
-        helper.printLine("Copying snapshot to secondary locations")
-        copySourceArgs = helper.getBaseArgsForLocation(
-            config, primaryLocationName, True
+    if len(locations) > 1 and not no_copy:
+        helper.print_line("Copying snapshot to secondary locations")
+        copySourceArgs = helper.get_location_arguments(
+            config, primary_location_name, True
         )
 
         for secondaryLocationName in locations[1:]:
-            helper.printNestedLine(f"Copying to '{secondaryLocationName}'...")
-            copyDestArgs = helper.getBaseArgsForLocation(
+            helper.print_nested_line(
+                f"Copying to '{secondaryLocationName}'..."
+            )
+            copyDestArgs = helper.get_location_arguments(
                 config, secondaryLocationName, False
             )
             copyArgs = [
@@ -136,18 +133,15 @@ def cli_run(
                 primarySnapshot,
             ]
 
-            # Get env vars for the destination, and make sure there's no overlap
-            copyDestEnv = helper.getResticEnv(config, secondaryLocationName)
-            intersection = [k for k in primaryLocationEnv if k in copyDestEnv]
-            if len(intersection) > 0:
-                helper.printError(
-                    "Error: Destination location environment variables overlap with primary location. Copy cannot be performed."
-                )
-
             # Execute the copy
-            helper.runCommandPolitely(
+            copyDestEnv = helper.get_execution_env(
+                config, secondaryLocationName
+            )
+            helper.run_command_politely(
                 command.restic, copyArgs, {**primaryLocationEnv, **copyDestEnv}
             )
+
+    helper.print_line(f"Finished at {datetime.datetime.now()}")
 
 
 @cli.command(
@@ -161,7 +155,7 @@ def cli_run(
 )
 def cli_execute(
     ctx: BackupCLIContext,
-    location: str = typer.Argument(
+    location_name: str = typer.Argument(
         ..., help="Name of the backup location to use when executing restic."
     ),
 ):
@@ -169,12 +163,14 @@ def cli_execute(
 
     # Collate everything, with unprocessed args, into a list
     args = [
-        *helper.getBaseArgsForLocation(config, location),
+        *helper.get_location_arguments(config, location_name),
         *ctx.args,
     ]
 
     # Execute the command
-    command.restic(args, _env=helper.getResticEnv(config, location), _fg=True)
+    command.restic(
+        args, _env=helper.get_execution_env(config, location_name), _fg=True
+    )
 
 
 @cli.command(
@@ -183,14 +179,16 @@ def cli_execute(
 )
 def cli_command(
     ctx: BackupCLIContext,
-    location: str = typer.Argument(..., help="Name of the backup location."),
+    location_name: str = typer.Argument(
+        ..., help="Name of the backup location."
+    ),
 ):
     config = ctx.obj
-    locationConf = helper.getLocationConfig(config, location)
+    location = helper.get_location(config, location_name)
 
     # We need to convert any environment vars to key=value pairs
     envArgs = []
-    if locationEnv := locationConf.get("env", None):
+    if locationEnv := (location.env or location.clean_env):
         envArgs.append("env")
         for key, value in locationEnv.items():
             envArgs.append(f"{key}={value}")
@@ -201,7 +199,7 @@ def cli_command(
             for arg in [
                 *envArgs,
                 "restic",
-                *helper.getBaseArgsForLocation(config, location),
+                *helper.get_location_arguments(config, location_name),
             ]
         )
     )
@@ -212,7 +210,7 @@ def cli_command(
 )
 def cli_snapshots(
     ctx: BackupCLIContext,
-    profile: str = typer.Argument(
+    profile_name: str = typer.Argument(
         ...,
         help="Name of the backup profile. Executes on the first location defined in the backup profile.",
     ),
@@ -225,16 +223,18 @@ def cli_snapshots(
     ),
 ):
     config = ctx.obj
-    profileConf = helper.getProfileConfig(config, profile)
-    locationList = profileConf.get("_locations", [])
-    locationName = location_override or locationList[0]
+    profile = helper.get_profile(config, profile_name)
+    assert profile.policy
+    policy = helper.get_policy(config, profile.policy)
+    locations = helper.get_policy_locations(policy)
+    location_name = location_override or locations[0]
 
     # Assemble arguments for the command
     args = [
-        *helper.getBaseArgsForLocation(config, locationName),
+        *helper.get_location_arguments(config, location_name),
         "snapshots",
-        *helper.getHostnameArgs(profileConf),
-        *helper.getTagArgs(config, profile),
+        *helper.get_hostname_arguments(profile),
+        *helper.get_tag_arguments(config, profile_name),
     ]
 
     # Enable JSON output if indicated
@@ -243,7 +243,7 @@ def cli_snapshots(
 
     # Execute the command
     command.restic(
-        args, _env=helper.getResticEnv(config, locationName), _fg=True
+        args, _env=helper.get_execution_env(config, location_name), _fg=True
     )
 
 
@@ -253,10 +253,8 @@ def cli_snapshots(
 )
 def cli_forget(
     ctx: BackupCLIContext,
-    profile: str = typer.Argument(..., help="Name of the backup profile."),
-    policy: typing.Optional[str] = typer.Argument(
-        None,
-        help="Name of the snapshot retention policy. If empty, defaults to the default policy defined for the backup profile.",
+    profile_name: str = typer.Argument(
+        ..., help="Name of the backup profile."
     ),
     dry_run: bool = typer.Option(
         False,
@@ -278,17 +276,19 @@ def cli_forget(
     ),
 ):
     config = ctx.obj
-    profileConf = helper.getProfileConfig(config, profile)
-    locationsList = locations_override or profileConf.get("_locations", [])
+    profile = helper.get_profile(config, profile_name)
+    assert profile.policy
+    policy = helper.get_policy(config, profile.policy)
+    locations = locations_override or helper.get_policy_locations(policy)
 
-    for locationName in locationsList:
+    for location_name in locations:
         # Assemble arguments for the command
         args = [
-            *helper.getBaseArgsForLocation(config, locationName),
+            *helper.get_location_arguments(config, location_name),
             "forget",
-            *helper.getHostnameArgs(profileConf),
-            *helper.getTagArgs(config, profile),
-            *helper.getRetentionPolicyArgs(config, profile, policy),
+            *helper.get_hostname_arguments(profile),
+            *helper.get_tag_arguments(config, profile_name),
+            *helper.get_retention_arguments(config, policy),
         ]
 
         # Add extra args
@@ -297,9 +297,11 @@ def cli_forget(
         if prune:
             args.append("--prune")
 
-        # Execute the command
-        helper.runCommandPolitely(
-            command.restic, args, helper.getResticEnv(config, locationName)
+        # Execute the forget command
+        helper.run_command_politely(
+            command.restic,
+            args,
+            helper.get_execution_env(config, location_name),
         )
 
 
@@ -309,18 +311,18 @@ def cli_forget(
 )
 def cli_prune(
     ctx: BackupCLIContext,
-    location: str = typer.Argument(
+    location_name: str = typer.Argument(
         ..., help="Name of the backup location to use when executing restic."
     ),
 ):
     config = ctx.obj
 
     # Assemble arguments for the command
-    args = [*helper.getBaseArgsForLocation(config, location), "prune"]
+    args = [*helper.get_location_arguments(config, location_name), "prune"]
 
     # Execute the command
-    helper.runCommandPolitely(
-        command.restic, args, helper.getResticEnv(config, location)
+    helper.run_command_politely(
+        command.restic, args, helper.get_execution_env(config, location_name)
     )
 
 
@@ -337,8 +339,10 @@ def cli_archive(
     destination: pathlib.Path = typer.Argument(
         ..., help="Destination directory for the archive file."
     ),
-    profile: str = typer.Argument(..., help="Name of the backup profile."),
-    locationOverride: typing.Optional[str] = typer.Option(
+    profile_name: str = typer.Argument(
+        ..., help="Name of the backup profile."
+    ),
+    location_override: typing.Optional[str] = typer.Option(
         None,
         "--location",
         "-l",
@@ -362,45 +366,47 @@ def cli_archive(
     ),
 ):
     config = ctx.obj
-    profileConf = helper.getProfileConfig(config, profile)
-    locations = profileConf.get("_locations", [])
-    locationName = locationOverride or locations[0]
+    profile = helper.get_profile(config, profile_name)
+    assert profile.policy
+    policy = helper.get_policy(config, profile.policy)
+    locations = helper.get_policy_locations(policy)
+    location_name = location_override or locations[0]
 
     # Pull archive configuration out of larger configuration structure
-    archiveConf = config.get("archive", {})
+    archive_config = config.archive
 
     # Reusable base args for following commands
-    locationArgs = helper.getBaseArgsForLocation(config, locationName)
-    locationEnv = helper.getResticEnv(config, locationName)
+    location_args = helper.get_location_arguments(config, location_name)
+    location_env = helper.get_execution_env(config, location_name)
 
-    archiveDestDir = destination.expanduser()
-    if not archiveDestDir.exists():
-        helper.printError(
-            f"Destination directory '{archiveDestDir}' does not exist"
+    archive_dest_dir = destination.expanduser()
+    if not archive_dest_dir.exists():
+        helper.print_error(
+            f"Destination directory '{archive_dest_dir}' does not exist"
         )
 
     # Cache directory is optional
-    dumpCacheValue = archiveConf.get("cache", config.get("cache", None))
-    cacheEnabled = bool(dumpCacheValue)
-    archiveCacheDir = (
-        pathlib.Path(dumpCacheValue).expanduser()
-        if cacheEnabled
-        else archiveDestDir
+    dump_cache_value = archive_config.cache if archive_config else config.cache
+    cache_enabled = bool(dump_cache_value)
+    archive_cache_dir = (
+        pathlib.Path(dump_cache_value).expanduser()
+        if cache_enabled
+        else archive_dest_dir
     )
 
     # Resolve the state of encryption and related variables
-    encryptionPasswordPath: typing.Optional[pathlib.Path] = None
-    encryptionEnabled = encrypt
-    if encryptionEnabled:
-        encryptionPasswordValue = password or archiveConf.get(
-            "passwordFile", None
+    encryption_password_path: typing.Optional[pathlib.Path] = None
+    encryption_enabled = encrypt
+    if encryption_enabled:
+        encryption_password_value = (
+            archive_config.password_file if archive_config else password
         )
-        if not encryptionPasswordValue:
-            helper.printError(
+        if not encryption_password_value:
+            helper.print_error(
                 "Archive encryption has been enabled, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
             )
-        encryptionPasswordPath = pathlib.Path(
-            encryptionPasswordValue
+        encryption_password_path = pathlib.Path(
+            encryption_password_value
         ).expanduser()
 
     # If no snapshots have been selected, default to latest
@@ -408,100 +414,108 @@ def cli_archive(
         snapshots = ["latest"]
 
     # Print some startup information
-    helper.printLine("Selected profile:", profile)
-    helper.printLine("location name:", locationName)
-    helper.printLine("Selected snapshots:", ", ".join(snapshots))
+    helper.print_line("Selected profile:", profile_name)
+    helper.print_line("location name:", location_name)
+    helper.print_line("Selected snapshots:", ", ".join(snapshots))
 
     # Iterate through each snapshot that's being dumped
-    for snapshotName in snapshots:
-        helper.printLine(f"Processing '{snapshotName}':")
+    for snapshot_name in snapshots:
+        helper.print_line(f"Processing '{snapshot_name}':")
 
         # Fetch information on the latest snapshot
-        helper.printNestedLine(f"Querying snapshots for '{snapshotName}'...")
-        snapsArgs = [
-            *locationArgs,
+        helper.print_nested_line(
+            f"Querying snapshots for '{snapshot_name}'..."
+        )
+        snaps_args = [
+            *location_args,
             "--quiet",
             "snapshots",
-            snapshotName,
+            snapshot_name,
             "--json",
         ]
-        snapsCommand = command.restic(snapsArgs, _env=locationEnv)
-        if snapsCommand is None:
-            helper.printError("Error querying snaphots. Exiting.")
-        assert isinstance(snapsCommand, str)
-        if "null" in snapsCommand:
-            helper.printError(f"Could not find snapshot: '{snapshotName}'")
-        latest = json.loads(snapsCommand)[0]
+        snaps_proc = command.restic(snaps_args, _env=location_env)
+        if snaps_proc is None:
+            helper.print_error("Error querying snaphots. Exiting.")
+        assert isinstance(snaps_proc, str)
+        if "null" in snaps_proc:
+            helper.print_error(f"Could not find snapshot: '{snapshot_name}'")
+        latest = json.loads(snaps_proc)[0]
 
         # Convert the timestamp to a datetime object
         # Requires the we first round off the milliseconds to three decimal places
         latest["time"] = datetime.datetime.fromisoformat(
-            helper.fixTimestamp(latest["time"])
+            helper.fix_timestamp(latest["time"])
         )
 
         # Creat timestamp and unique filename for this repo
         timestamp = latest["time"].strftime(r"%Y%m%d%H%M%S")
-        shortName = profileConf.get("archiveName", profile)
-        filename = f"{shortName}_{timestamp}_{latest['short_id']}.tar.zst"
-        if encryptionEnabled:
-            filename += ".aes"
+        short_name = profile.archive_name or profile_name
+        file_name = f"{short_name}_{timestamp}_{latest['short_id']}.tar.zst"
+        if encryption_enabled:
+            file_name += ".aes"
 
         # Make sure the cache and destination files don't exist yet
-        archiveCacheFile = archiveCacheDir / filename
-        if archiveCacheFile.exists():
-            helper.printError(
-                f"Archive already exists at '{archiveCacheFile}'"
+        archive_cache_file = archive_cache_dir / file_name
+        if archive_cache_file.exists():
+            helper.print_error(
+                f"Archive already exists at '{archive_cache_file}'"
             )
-        archiveDestFile = archiveDestDir / filename
-        if archiveDestFile.exists():
-            helper.printError(
-                f"Final archive already exists at '{archiveDestFile}'"
+        archive_dest_file = archive_dest_dir / file_name
+        if archive_dest_file.exists():
+            helper.print_error(
+                f"Final archive already exists at '{archive_dest_file}'"
             )
 
         # Inform the user which snapshot is being used
-        helper.printNestedLine(
+        helper.print_nested_line(
             f"Using snapshot ID '{latest['id'][:8]}' with timestamp '{latest['time']}'"
         )
 
         # Fetch the size of the latest snapshot
-        helper.printNestedLine("Querying snapshot size...")
-        statsArgs = [*locationArgs, "--quiet", "stats", latest["id"], "--json"]
-        statsCommand = command.restic(statsArgs, _env=locationEnv)
-        if statsCommand is None:
-            helper.printError("Error querying snaphot statistics. Exiting.")
-        assert isinstance(statsCommand, str)
-        latestSize = json.loads(statsCommand)["total_size"]
-        helper.printNestedLine(
-            f"Archive should be no larger than (approx.) {helper.humanReadable(latestSize)}"
+        helper.print_nested_line("Querying snapshot size...")
+        stats_args = [
+            *location_args,
+            "--quiet",
+            "stats",
+            latest["id"],
+            "--json",
+        ]
+        stats_proc = command.restic(stats_args, _env=location_env)
+        if stats_proc is None:
+            helper.print_error("Error querying snaphot statistics. Exiting.")
+        assert isinstance(stats_proc, str)
+        latest_size = json.loads(stats_proc)["total_size"]
+        helper.print_nested_line(
+            f"Archive should be no larger than (approx.) {helper.human_readable(latest_size)}"
         )
 
         # Ensure there's enough space in the cache dir and the destination
-        archiveCacheUsage = shutil.disk_usage(archiveCacheDir)
-        if archiveCacheUsage.free < latestSize:
-            helper.printError(
-                f"Error: Dump archive needs at least {helper.humanReadable(latestSize)}, "
-                f"but directory only has {helper.humanReadable(archiveCacheUsage.free)} free"
+        archive_cache_usage = shutil.disk_usage(archive_cache_dir)
+        if archive_cache_usage.free < latest_size:
+            helper.print_error(
+                f"Error: Dump archive needs at least {helper.human_readable(latest_size)}, "
+                f"but directory only has {helper.human_readable(archive_cache_usage.free)} free"
             )
-        archiveDestUsage = shutil.disk_usage(archiveDestDir)
-        if archiveDestUsage.free < latestSize:
-            helper.printError(
-                f"Error: Dump archive needs at least {helper.humanReadable(latestSize)}, "
-                f"but destination directory only has {helper.humanReadable(archiveDestUsage.free)} free"
+        archive_dest_usage = shutil.disk_usage(archive_dest_dir)
+        if archive_dest_usage.free < latest_size:
+            helper.print_error(
+                f"Error: Dump archive needs at least {helper.human_readable(latest_size)}, "
+                f"but destination directory only has {helper.human_readable(archive_dest_usage.free)} free"
             )
 
         # Begin dumping the repo to an archive
-        helper.printNestedLine("Creating archive...")
-        dumpCommand = None
-        if encryptionEnabled:
-            dumpCommand = command.openSsl(
+        helper.print_nested_line("Creating archive...")
+        dump_proc = None
+        if encryption_enabled:
+            dump_proc = command.openSsl(
                 command.zStd(
                     command.pv(
                         command.restic(
-                            *[*locationArgs, "dump", latest["id"], "/"],
-                            _env=locationEnv,
+                            *[*location_args, "dump", latest["id"], "/"],
+                            _env=location_env,
                             _piped=True,
                         ),
-                        *["-pterbs", str(latestSize)],
+                        *["-pterbs", str(latest_size)],
                         _err=sys.stderr,
                         _piped=True,
                     ),
@@ -517,50 +531,50 @@ def cli_archive(
                     "-iter",
                     "100000",
                     "-pass",
-                    f"file:{encryptionPasswordPath}",
+                    f"file:{encryption_password_path}",
                     "-e",
                 ],
-                _out=str(archiveCacheFile),
+                _out=str(archive_cache_file),
             )
         else:
-            dumpCommand = command.zStd(
+            dump_proc = command.zStd(
                 command.pv(
                     command.restic(
-                        *[*locationArgs, "dump", latest["id"], "/"],
-                        _env=locationEnv,
+                        *[*location_args, "dump", latest["id"], "/"],
+                        _env=location_env,
                         _piped=True,
                     ),
-                    *["-pterbs", str(latestSize)],
+                    *["-pterbs", str(latest_size)],
                     _err=sys.stderr,
                     _piped=True,
                 ),
                 *["-c", "-T8"],
-                _out=str(archiveCacheFile),
+                _out=str(archive_cache_file),
             )
 
-        if dumpCommand is None:
-            helper.printError("Error creating archive. Exiting.")
+        if dump_proc is None:
+            helper.print_error("Error creating archive. Exiting.")
 
         # Copy the dump archive to the destination, if cache was enabled
-        if cacheEnabled:
-            helper.printNestedLine("Moving archive to final destination...")
-            dumpSize = archiveCacheFile.stat().st_size
-            copyCommand = command.pv(
-                *["-pterbs", dumpSize, archiveCacheFile],
-                _out=str(archiveDestFile),
+        if cache_enabled:
+            helper.print_nested_line("Moving archive to final destination...")
+            dump_size = archive_cache_file.stat().st_size
+            copy_proc = command.pv(
+                *["-pterbs", dump_size, archive_cache_file],
+                _out=str(archive_dest_file),
                 _err=sys.stderr,
             )
 
-            if copyCommand is None:
-                helper.printError(
+            if copy_proc is None:
+                helper.print_error(
                     "Error copying archive to final destination. Exiting."
                 )
 
-            archiveCacheFile.unlink()
+            archive_cache_file.unlink()
 
         # Print success message for this repo
-        helper.printNestedLine(
-            f"{Fore.GREEN}Success!{Style.RESET_ALL} Archive is now available at {archiveDestFile}"
+        helper.print_nested_line(
+            f"[green]Success![/] Archive is now available at {archive_dest_file}"
         )
 
 
@@ -585,17 +599,17 @@ def cli_decrypt(
 
     # Ensure output is NOT a terminal
     if hasattr(stream_output, "isatty") and stream_output.isatty():
-        helper.printError("Stdout is a TTY. Try piping this command instead.")
+        helper.print_error("Stdout is a TTY. Try piping this command instead.")
 
     # Construct arguments for the command chain
-    archivePasswordValue = password or config.get("archive", {}).get(
-        "passwordFile", None
+    archive_password_value = (
+        config.archive.password_file if config.archive else password
     )
-    if not archivePasswordValue:
-        helper.printError(
+    if not archive_password_value:
+        helper.print_error(
             "You are trying to decrypt an archive, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
         )
-    archivePasswordPath = pathlib.Path(archivePasswordValue).expanduser()
+    archive_password_path = pathlib.Path(archive_password_value).expanduser()
 
     # Pipe openssl to zstd and then stdout
     command.zStd(
@@ -609,7 +623,7 @@ def cli_decrypt(
                 "-iter",
                 "100000",
                 "-pass",
-                f"file:{archivePasswordPath}",
+                f"file:{archive_password_path}",
                 "-d",
             ],
             _piped=True,
@@ -628,26 +642,31 @@ def cli_list(ctx: BackupCLIContext):
     config = ctx.obj
 
     # Locations
-    locations = config.get("locations", {})
-    helper.printLine(f"Locations: {', '.join(locations.keys())}")
-    for locationName, locationConf in locations.items():
-        helper.printKeyVal("Name", locationName)
-        helper.printConfigData(locationConf)
-        print()
+    locations = config.locations
+    helper.print("Locations:")
+    for location_name in locations:
+        helper.print(f"  - {location_name}")
+
+    helper.print()
+
+    # Policies
+    policies = config.policies
+    helper.print_line("Policies:")
+    for policy_name in policies:
+        helper.print(f"  - {policy_name}")
+
+    helper.print()
 
     # Profiles
-    profiles = config.get("profiles", {})
-    helper.printLine(f"Profiles: {', '.join(profiles.keys())}")
-    for profileName, profileConf in [
-        (
-            f"{Fore.RED}globalProfile{Style.RESET_ALL}",
-            config.get("globalProfile", {}),
-        ),
-        *profiles.items(),
+    profiles = config.profiles
+    helper.print_line("Profiles:")
+    for profile_name in [
+        "[red]global_profile",
+        *profiles.keys(),
     ]:
-        helper.printKeyVal("Name", profileName)
-        helper.printConfigData(profileConf)
-        print()
+        helper.print(f"  - {profile_name}")
+
+    helper.print()
 
 
 @cli.command(name="copy", help="Copy a snapshot from one location to another.")
@@ -668,23 +687,82 @@ def cli_copy(
     config = ctx.obj
 
     if source == destination:
-        helper.printError(
+        helper.print_error(
             "Error: Source and destination of copy can't be the same!"
         )
 
     # Assemble arguments for the command
-    sourceArgs = helper.getBaseArgsForLocation(config, source, True)
-    destinationArgs = helper.getBaseArgsForLocation(config, destination, False)
+    sourceArgs = helper.get_location_arguments(config, source, True)
+    destinationArgs = helper.get_location_arguments(config, destination, False)
     args = [*destinationArgs, "copy", *sourceArgs, *snapshots]
 
     # Get env vars for the source and destination, and make sure there's no overlap
-    sourceEnv = helper.getResticEnv(config, source)
-    destinationEnv = helper.getResticEnv(config, destination)
+    sourceEnv = helper.get_execution_env(config, source)
+    destinationEnv = helper.get_execution_env(config, destination)
     intersection = [k for k in sourceEnv if k in destinationEnv]
     if len(intersection) > 0:
-        helper.printError(
+        helper.print_error(
             "Error: Source and destination location environment variables overlap. Consider copying to an intermediate location first."
         )
 
     # Execute the restic command
     command.restic(args, _env={**sourceEnv, **destinationEnv}, _fg=True)
+
+
+@cli.command(
+    name="daemon", help="Run in daemon mode and execute backups on a schedule."
+)
+def cli_daemon(
+    ctx: BackupCLIContext,
+):
+    config = ctx.obj
+
+    helper.print_line("Scheduling jobs for applicable profiles...")
+    scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
+        executors={
+            "default": apscheduler.executors.pool.ThreadPoolExecutor(1)
+        },
+        misfire_grace_time=None,
+        coalesce=True,
+    )
+    jobs_added = False
+
+    # Iterate through every defined profile
+    for profile_name, profile in config.profiles.items():
+        policy = (
+            helper.get_policy(config, profile.policy)
+            if profile.policy
+            else None
+        )
+        if policy and policy.schedule:
+            helper.print_nested_line(f"{profile_name}: {policy.schedule}")
+            trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
+                policy.schedule
+            )
+
+            scheduler.add_job(
+                id=profile_name,
+                trigger=trigger,
+                func=cli_run,
+                args=[ctx],
+                kwargs={
+                    "name": profile_name,
+                    "groups": [],
+                    "no_copy": False,
+                    "locations_override": None,
+                },
+            )
+            jobs_added = True
+
+    if not jobs_added:
+        helper.print_warning(
+            "No jobs scheduled. Check your configuration and try again. Exiting..."
+        )
+        exit()
+
+    try:
+        helper.print_warning("Starting scheduler...")
+        scheduler.start()
+    except KeyboardInterrupt:
+        helper.print_warning("Scheduler stopping...")
+        exit()

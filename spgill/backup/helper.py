@@ -2,13 +2,12 @@
 import os
 import pathlib
 import re
-import shlex
 import sys
 import typing
 
 # Vendor imports
-from colorama import Fore, Style
 import humanize
+import rich
 import sh
 import yaml
 
@@ -16,7 +15,7 @@ import yaml
 from . import model
 
 
-def fixTimestamp(t: str) -> str:
+def fix_timestamp(t: str) -> str:
     return re.sub(
         r":(\d+)\.(\d+)",
         lambda match: f":{match.group(1)}.{match.group(2)[:6]}",
@@ -24,291 +23,305 @@ def fixTimestamp(t: str) -> str:
     )
 
 
-def printLine(*args, file=sys.stdout):
+def print(*args, file=sys.stdout):
+    rich.print(*args, file=file)
+
+
+def print_line(*args, file=sys.stdout):
     print("-" * 8, *args, file=file)
 
 
-def printNestedLine(*args):
+def print_nested_line(*args):
     print("-" * 12, *args)
 
 
-def printWarning(message: str):
-    printLine(f"{Fore.YELLOW}{message}{Style.RESET_ALL}", file=sys.stderr)
+def print_warning(message: str):
+    print_line(f"[yellow]{message}", file=sys.stderr)
 
 
-def printError(message: str):
-    print("-" * 8, f"{Fore.RED}{message}{Style.RESET_ALL}", file=sys.stderr)
+def print_error(message: str):
+    print("-" * 8, f"[red]{message}", file=sys.stderr)
     exit(1)
 
 
-def printKeyVal(key: str, value: str = ""):
-    print(f"{Fore.YELLOW}{key}{Style.RESET_ALL}: {value}")
+def print_kv(key: str, value: str = ""):
+    print(f"[yellow]{key}[/]: {value}")
 
 
-def printConfigData(data: typing.Any):
+def print_config_data(data: typing.Any):
     serialized: str = yaml.dump(data)
     print("\n".join("|  " + line for line in serialized.splitlines()))
 
 
-def humanReadable(num):
+def human_readable(num):
     return humanize.naturalsize(num, binary=True)
 
 
-def getLocationConfig(
-    config: model.MasterBackupConfiguration, name: str
+def get_location(
+    config: model.RootBackupConfiguration, name: str
 ) -> model.BackupLocation:
-    locations = config.get("locations", {})
+    if not (location := config.locations.get(name, None)):
+        print_error(f"Error: No backup location found by name '{name}'")
 
-    if not (locationData := locations.get(name, None)):
-        printError(f"Error: No backup location '{name}' defined in config")
-
-    return locationData
+    return location
 
 
-def getProfileConfig(
-    config: model.MasterBackupConfiguration, name: str
+def get_profile(
+    config: model.RootBackupConfiguration, name: str
 ) -> model.BackupProfile:
-    profiles = config.get("profiles", {})
+    if not (profile := config.profiles.get(name, None)):
+        print_error(f"Error: No backup profile found by name '{name}'")
 
-    if not (profileData := profiles.get(name, None)):
-        printError(f"Error: No backup profile '{name}' defined in config")
+    # Ensure there is a policy defined for the profile
+    if not profile.policy:
+        print_error(f"Error: Backup profile '{name}' has no policy defined")
 
-    # Ensure there is a location
-    if "location" not in profileData:
-        printError(f"Error: No location defined for profile '{name}'")
+    return profile
 
-    # Normalize the location to an array
-    if isinstance(profileData["location"], str):
-        profileData["_locations"] = [
-            profileData["location"],
-        ]
-    else:
-        profileData["_locations"] = profileData["location"]
 
-    return profileData
+def get_policy(
+    config: model.RootBackupConfiguration, name: str
+) -> model.BackupPolicy:
+    if not (policy := config.policies.get(name, None)):
+        print_error(f"Error: No backup policy found by name '{name}'")
+
+    # Ensure location is defined
+    if not policy.location:
+        print_error(f"Error: Policy '{name}' has no location defined")
+
+    return policy
+
+
+def get_policy_locations(policy: model.BackupPolicy) -> list[str]:
+    assert policy.location is not None
+    if isinstance(policy.location, str):
+        return [policy.location]
+    return policy.location
 
 
 # List of location option flags for both local and remote locations
-locationOptionNames = {
+location_option_names = {
     "repo": {"from": "--from-repo", "to": "--repo"},
-    "passwordFile": {"from": "--from-password-file", "to": "--password-file"},
-    "passwordCommand": {
+    "password_file": {"from": "--from-password-file", "to": "--password-file"},
+    "password_command": {
         "from": "--from-password-command",
         "to": "--password-command",
     },
 }
 
 
-def getBaseArgsForLocation(
-    config: model.MasterBackupConfiguration,
-    locationName: str,
-    fromRepo: bool = False,
+def get_location_arguments(
+    config: model.RootBackupConfiguration,
+    location_name: str,
+    from_repo: bool = False,
 ) -> list[str]:
-    locationConf = getLocationConfig(config, locationName)
-    optionKey = "from" if fromRepo else "to"
+    location = get_location(config, location_name)
+    option_key = "from" if from_repo else "to"
 
     # Generate cache dir args (only for destination repos)
-    cacheArgs = []
-    if not fromRepo and (cachePath := config.get("cache", None)):
-        cacheArgs = ["--cache-dir", cachePath]
+    cache_args = []
+    if not from_repo and config.cache:
+        cache_args = ["--cache-dir", config.cache]
 
     # Generate password args
-    passwordArgs = []
-    if "passwordFile" in locationConf:
-        passwordFilePath = fullyQualifiedPath(
-            locationConf["passwordFile"], True
-        )
-        passwordArgs = [
-            locationOptionNames["passwordFile"][optionKey],
-            str(passwordFilePath),
+    password_args = []
+    if location.password_file:
+        password_file_path = fully_qualified_path(location.password_file, True)
+        password_args = [
+            location_option_names["password_file"][option_key],
+            str(password_file_path),
         ]
-    elif "passwordCommand" in locationConf:
-        passwordArgs = [
-            locationOptionNames["passwordCommand"][optionKey],
-            locationConf["passwordCommand"],
+    elif location.password_command:
+        password_args = [
+            location_option_names["password_command"][option_key],
+            location.password_command,
         ]
     else:
-        printWarning(
-            f"Warning: No 'passwordCommand' or 'passwordFile' defined for backup location '{locationName}'"
+        print_warning(
+            f"Warning: No 'password_command' or 'password_file' defined for backup location '{location_name}'"
         )
 
     # Return the final list of args
     return [
-        *cacheArgs,
-        *passwordArgs,
-        locationOptionNames["repo"][optionKey],
-        locationConf.get("path", ""),
+        *cache_args,
+        *password_args,
+        location_option_names["repo"][option_key],
+        location.path,
     ]
 
 
-def getTagArgs(
-    config: model.MasterBackupConfiguration,
-    profileName: str,
+def get_tag_arguments(
+    config: model.RootBackupConfiguration,
+    profile_name: str,
 ) -> list[str]:
-    profile = getProfileConfig(config, profileName)
-    if tags := profile.get("tags", []):
-        return ["--tag", ",".join(tags)]
+    profile = get_profile(config, profile_name)
+    if profile.tags:
+        return ["--tag", ",".join(profile.tags)]
     return []
 
 
-def getResticEnv(
-    config: model.MasterBackupConfiguration,
-    locationName: str,
+def get_execution_env(
+    config: model.RootBackupConfiguration,
+    location_name: str,
 ) -> dict:
-    locationConf = getLocationConfig(config, locationName)
+    location = get_location(config, location_name)
 
-    # If "cleanEnv" property is used, we will start with a clean environment
-    if "cleanEnv" in locationConf:
-        return locationConf["cleanEnv"]
+    # If "clean_env" property is used, we will start with a clean environment
+    if location.clean_env:
+        return location.clean_env
 
     # Else, we will augment the execution environment with the "env" property (if defined)
-    return {**dict(os.environ), **locationConf.get("env", {})}
+    return {**dict(os.environ), **(location.env or {})}
 
 
-def fullyQualifiedPath(
-    pathStr: str, ensureExists: bool = False
+def fully_qualified_path(
+    path: typing.Union[str, pathlib.Path], ensure_exists: bool = False
 ) -> pathlib.Path:
-    path = pathlib.Path(pathStr).expanduser().absolute()
-    if ensureExists and not path.exists():
-        printError(f"File path '{path}' (from '{pathStr}') does not exist")
-    return path
+    normalized = pathlib.Path(path).expanduser().absolute()
+    if ensure_exists and not normalized.exists():
+        print_error(f"File path '{normalized}' (from '{path}') does not exist")
+    return normalized
 
 
-def getIncludeExcludeArgs(
-    config: model.MasterBackupConfiguration,
-    profileName: str,
-    selectedGroupNames: typing.Sequence[str],
+def get_inclusion_arguments(
+    config: model.RootBackupConfiguration,
+    profile_name: str,
+    group_names: list[str],
 ) -> typing.Generator[str, None, None]:
-    profile = getProfileConfig(config, profileName)
+    profile = get_profile(config, profile_name)
 
     # Collate list of backup groups (including the base and global profiles)
-    selectedGroups = profile.get("groups", {}).values()
-    if selectedGroupNames:
-        selectedGroups = [
+    selected_groups = (profile.groups or {}).values()
+    if group_names:
+        selected_groups = [
             group
-            for groupName, group in profile.get("groups", {}).items()
-            if groupName in selectedGroupNames
+            for group_name, group in (profile.groups or {}).items()
+            if group_name in group_names
         ]
 
-    finalGroups: list[model.BackupSourceDef] = [
-        config.get("globalProfile", {}),
+    final_groups: list[model.BackupSourceDef] = [
+        *([config.global_profile] if config.global_profile else []),
         profile,
-        *selectedGroups,
+        *selected_groups,
     ]
 
     # Basic include list must come last in the args, so they will be collected
     # and emitted last
-    includeList: list[str] = []
+    include_list: list[str] = []
 
     # Iterate through the groups and generate arguments
-    for group in finalGroups:
+    for group in final_groups:
         # Store basic include entries for emitting at the end
-        for entry in group.get("include", []):
-            includeList.append(entry)
+        for entry in group.include:
+            include_list.append(entry)
 
         # Process various include files flags
-        for entry in group.get("includeFilesFrom", []):
+        for entry in group.include_files_from:
             yield "--files-from"
-            yield str(fullyQualifiedPath(entry, True))
+            yield str(fully_qualified_path(entry, True))
 
-        for entry in group.get("includeFilesFromVerbatim", []):
+        for entry in group.include_files_from_verbatim:
             yield "--files-from-verbatim"
-            yield str(fullyQualifiedPath(entry, True))
+            yield str(fully_qualified_path(entry, True))
 
         # Process various exlude file flags
-        for entry in group.get("exclude", []):
+        for entry in group.exclude:
             yield "--exclude"
             yield entry
 
-        for entry in group.get("iexclude", []):
+        for entry in group.iexclude:
             yield "--iexclude"
             yield entry
 
-        for entry in group.get("excludeIfPresent", []):
+        for entry in group.exclude_if_present:
             yield "--exclude-if-present"
             yield entry
 
-        for entry in group.get("excludeFile", []):
+        for entry in group.exclude_file:
             yield "--exclude-file"
-            yield str(fullyQualifiedPath(entry, True))
+            yield str(fully_qualified_path(entry, True))
 
-        for entry in group.get("iexcludeFile", []):
+        for entry in group.iexclude_file:
             yield "--iexclude-file"
-            yield str(fullyQualifiedPath(entry, True))
+            yield str(fully_qualified_path(entry, True))
 
-        if group.get("excludeCaches", False):
+        if group.exclude_caches:
             yield "--exclude-caches"
 
-        if excludeSize := group.get("excludeLargerThan", ""):
+        if excludeSize := group.exclude_larger_than:
             # In case the user specifies a number with a suffix, this will probably be a number
             # and an error should be thrown
             if not isinstance(excludeSize, str):
-                printError(
-                    f"Option 'excludeLargerThan' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
+                print_error(
+                    f"Option 'exclude_larger_than' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
                 )
             yield "--exclude-larger-than"
             yield excludeSize
 
     # Emit basic include lines
-    for entry in includeList:
+    for entry in include_list:
         yield entry
 
 
-def getHostnameArgs(profile: model.BackupProfile) -> list[str]:
-    if hostname := profile.get("hostname", None):
-        return ["--host", hostname]
+def get_hostname_arguments(profile: model.BackupProfile) -> list[str]:
+    if profile.hostname:
+        return ["--host", profile.hostname]
     return []
 
 
-def getRetentionPolicyArgs(
-    config: model.MasterBackupConfiguration,
-    profileName: str,
-    policyName: typing.Optional[str],
+def get_retention_arguments(
+    config: model.RootBackupConfiguration,
+    policy: model.BackupPolicy,
 ) -> list[str]:
-    # Make sure the policies dict exists
-    if "policies" not in config:
-        printError(
-            "Error: No retention policies found in the config file. Please check the contents of the config."
-        )
+    # If there are no retention args, return empty list
+    if not policy.retention:
+        print_warning("Warning: No retention defined for policy")
+        return []
 
-    # If not policy name was given, try to default to what was defined as default for the profile
-    if not policyName:
-        profileConf = getProfileConfig(config, profileName)
-        if not (policyName := profileConf.get("retention", None)):
-            printError(
-                f"Error: No default retention policy defined for profile '{profileName}'. Please amend the config or specify one in the command."
-            )
+    # Build out the args for retention
+    retention = policy.retention
+    args: list[str] = []
 
-    # Print error if the policy cannot be found
-    if policyName not in config["policies"]:
-        printError(
-            f"Error: Could not find retention policy named '{policyName}'"
-        )
+    if retention.keep_last:
+        args += ["--keep-last", retention.keep_last]
 
-    return shlex.split(config["policies"][policyName])
+    if retention.keep_within:
+        args += ["--keep-within", retention.keep_within]
+
+    if retention.keep_hourly:
+        args += ["--keep-hourly", retention.keep_hourly]
+
+    if retention.keep_daily:
+        args += ["--keep-daily", retention.keep_daily]
+
+    if retention.keep_weekly:
+        args += ["--keep-weekly", retention.keep_weekly]
+
+    if retention.keep_monthly:
+        args += ["--keep-monthly", retention.keep_monthly]
+
+    if retention.keep_yearly:
+        args += ["--keep-yearly", retention.keep_hourly]
+
+    return args
 
 
-def maximizeNiceness():
+def maximize_niceness():
     os.nice(20)
 
 
-def runCommandPolitely(
+def run_command_politely(
     command: sh.Command,
     args: list[typing.Any],
     env: dict = {},
     okCodes: list[int] = [0],
 ):
-    # Make a full copy of the process environment and layer the argument
-    # env on top
-    fullEnv = os.environ.copy()
-    fullEnv.update(env)
-
     # Start the command
-    runningProcess = command(
+    running_proc = command(
         *args,
-        _preexec_fn=maximizeNiceness,
+        _preexec_fn=maximize_niceness,
         _bg=True,
-        _env=fullEnv,
+        _env=env,
         _out=sys.stdout,
         _err=sys.stderr,
         _tee=True,
@@ -316,16 +329,16 @@ def runCommandPolitely(
     )
 
     # The running process should not be a string
-    assert isinstance(runningProcess, sh.RunningCommand)
+    assert isinstance(running_proc, sh.RunningCommand)
 
     # Wait for it to finish and catch any keyboard interrupts
     try:
-        runningProcess.wait()
+        running_proc.wait()
     except KeyboardInterrupt:
         print("---------- Keyboard interrupt detected")
-        if runningProcess.is_alive():
+        if running_proc.is_alive():
             print("---------- Killing the running process...")
-            runningProcess.kill()
+            running_proc.kill()
         exit()
 
-    return runningProcess
+    return running_proc

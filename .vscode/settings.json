@@ -21,9 +21,15 @@
     "statusBarItem.hoverBackground": "#369b84",
     "sash.hoverBorder": "#6ccbb6",
     "statusBarItem.remoteBackground": "#46bea3",
-    "statusBarItem.remoteForeground": "#15202b"
-  },
+    "statusBarItem.remoteForeground": "#15202b",
+    "titleBar.activeBackground": "#46bea3",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#46bea399",
+    "titleBar.inactiveForeground": "#15202b99",
+    "commandCenter.border": "#15202b99"
+},
 
   "peacock.color": "#46bea3",
-  "peacock.remoteColor": "#46bea3"
+  "peacock.remoteColor": "#46bea3",
+  "python.analysis.typeCheckingMode": "basic"
 }
