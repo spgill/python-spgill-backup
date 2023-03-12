@@ -3,6 +3,7 @@ black
 flake8
 
 # Package dependencies
+apscheduler
 click
 dataclass-wizard
 humanize
