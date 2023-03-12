@@ -365,6 +365,12 @@ def cli_archive(
         help="Specify path to a file containing the password for archive encryption purposes.",
     ),
 ):
+    # Must have all the required commands available to use
+    if not command.openssl or not command.pv or not command.zstd:
+        helper.print_error(
+            "Error: Cannot find commands required for archive operation. Ensure 'openssl', 'pv', and 'zstd' are installed and available on PATH."
+        )
+
     config = ctx.obj
     profile = helper.get_profile(config, profile_name)
     assert profile.policy
@@ -507,8 +513,8 @@ def cli_archive(
         helper.print_nested_line("Creating archive...")
         dump_proc = None
         if encryption_enabled:
-            dump_proc = command.openSsl(
-                command.zStd(
+            dump_proc = command.openssl(
+                command.zstd(
                     command.pv(
                         command.restic(
                             *[*location_args, "dump", latest["id"], "/"],
@@ -537,7 +543,7 @@ def cli_archive(
                 _out=str(archive_cache_file),
             )
         else:
-            dump_proc = command.zStd(
+            dump_proc = command.zstd(
                 command.pv(
                     command.restic(
                         *[*location_args, "dump", latest["id"], "/"],
@@ -595,6 +601,12 @@ def cli_decrypt(
         help="Specify path to a file containing the password for archive decryption.",
     ),
 ):
+    # Must have all the required commands available to use
+    if not command.openssl or not command.pv or not command.zstd:
+        helper.print_error(
+            "Error: Cannot find commands required for archive operation. Ensure 'openssl', 'pv', and 'zstd' are installed and available on PATH."
+        )
+
     config = ctx.obj
 
     # Ensure output is NOT a terminal
@@ -612,8 +624,8 @@ def cli_decrypt(
     archive_password_path = pathlib.Path(archive_password_value).expanduser()
 
     # Pipe openssl to zstd and then stdout
-    command.zStd(
-        command.openSsl(
+    command.zstd(
+        command.openssl(
             *[
                 "enc",
                 "-aes-256-cbc",
