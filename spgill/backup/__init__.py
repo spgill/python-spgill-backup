@@ -734,8 +734,10 @@ def cli_daemon(
         executors={
             "default": apscheduler.executors.pool.ThreadPoolExecutor(1)
         },
-        misfire_grace_time=None,
-        coalesce=True,
+        job_defaults={
+            "misfire_grace_time": None,
+            "coalesce": True,
+        },
     )
     jobs_added = False
 
