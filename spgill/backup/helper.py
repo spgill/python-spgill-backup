@@ -7,6 +7,7 @@ import typing
 
 # Vendor imports
 import humanize
+import mergedeep
 import rich
 import sh
 import yaml
@@ -66,6 +67,27 @@ def get_location(
     return location
 
 
+def merge_with_global_profile(
+    config: model.RootBackupConfiguration, profile: model.BackupProfile
+) -> model.BackupProfile:
+    """This function returns the given profile with the global profile defaults applied."""
+    # Serialize the global profile and selected profile to dictionaries
+    global_dict = (
+        {}
+        if config.global_profile is None
+        else config.global_profile.dict(exclude_defaults=True)
+    )
+    profile_dict = profile.dict(exclude_defaults=True)
+
+    # Perform an additive merge of the two profiles
+    merged_dict = mergedeep.merge(
+        {}, global_dict, profile_dict, strategy=mergedeep.Strategy.ADDITIVE
+    )
+
+    # Return a new backup profile representing the merger
+    return model.BackupProfile(**merged_dict)
+
+
 def get_profile(
     config: model.RootBackupConfiguration, name: str
 ) -> model.BackupProfile:
@@ -76,7 +98,7 @@ def get_profile(
     if not profile.policy:
         print_error(f"Error: Backup profile '{name}' has no policy defined")
 
-    return profile
+    return merge_with_global_profile(config, profile)
 
 
 def get_policy(
@@ -190,73 +212,56 @@ def get_inclusion_arguments(
 ) -> typing.Generator[str, None, None]:
     profile = get_profile(config, profile_name)
 
-    # Collate list of backup groups (including the base and global profiles)
-    selected_groups = (profile.groups or {}).values()
-    if group_names:
-        selected_groups = [
-            group
-            for group_name, group in (profile.groups or {}).items()
-            if group_name in group_names
-        ]
-
-    final_groups: list[model.BackupSourceDef] = [
-        *([config.global_profile] if config.global_profile else []),
-        profile,
-        *selected_groups,
-    ]
-
-    # Basic include list must come last in the args, so they will be collected
+    # List of includes must come last as positional args, so they will be collected
     # and emitted last
     include_list: list[str] = []
 
-    # Iterate through the groups and generate arguments
-    for group in final_groups:
-        # Store basic include entries for emitting at the end
-        for entry in group.include:
-            include_list.append(entry)
+    # Store basic include entries for emitting at the end
+    for entry in profile.include:
+        include_list.append(entry)
 
-        # Process various include files flags
-        for entry in group.include_files_from:
-            yield "--files-from"
-            yield str(fully_qualified_path(entry, True))
+    # Process various include files flags
+    for entry in profile.include_files_from:
+        yield "--files-from"
+        yield str(fully_qualified_path(entry, True))
 
-        for entry in group.include_files_from_verbatim:
-            yield "--files-from-verbatim"
-            yield str(fully_qualified_path(entry, True))
+    for entry in profile.include_files_from_verbatim:
+        yield "--files-from-verbatim"
+        yield str(fully_qualified_path(entry, True))
 
-        # Process various exlude file flags
-        for entry in group.exclude:
-            yield "--exclude"
-            yield entry
+    # Process various exlude file flags
+    for entry in profile.exclude:
+        yield "--exclude"
+        yield entry
 
-        for entry in group.iexclude:
-            yield "--iexclude"
-            yield entry
+    for entry in profile.iexclude:
+        yield "--iexclude"
+        yield entry
 
-        for entry in group.exclude_if_present:
-            yield "--exclude-if-present"
-            yield entry
+    for entry in profile.exclude_if_present:
+        yield "--exclude-if-present"
+        yield entry
 
-        for entry in group.exclude_file:
-            yield "--exclude-file"
-            yield str(fully_qualified_path(entry, True))
+    for entry in profile.exclude_file:
+        yield "--exclude-file"
+        yield str(fully_qualified_path(entry, True))
 
-        for entry in group.iexclude_file:
-            yield "--iexclude-file"
-            yield str(fully_qualified_path(entry, True))
+    for entry in profile.iexclude_file:
+        yield "--iexclude-file"
+        yield str(fully_qualified_path(entry, True))
 
-        if group.exclude_caches:
-            yield "--exclude-caches"
+    if profile.exclude_caches:
+        yield "--exclude-caches"
 
-        if excludeSize := group.exclude_larger_than:
-            # In case the user specifies a number with a suffix, this will probably be a number
-            # and an error should be thrown
-            if not isinstance(excludeSize, str):
-                print_error(
-                    f"Option 'exclude_larger_than' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
-                )
-            yield "--exclude-larger-than"
-            yield excludeSize
+    if excludeSize := profile.exclude_larger_than:
+        # In case the user specifies a number with a suffix, this will probably be a number
+        # and an error should be thrown
+        if not isinstance(excludeSize, str):
+            print_error(
+                f"Option 'exclude_larger_than' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
+            )
+        yield "--exclude-larger-than"
+        yield excludeSize
 
     # Emit basic include lines
     for entry in include_list:

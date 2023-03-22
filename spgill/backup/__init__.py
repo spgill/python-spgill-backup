@@ -32,7 +32,7 @@ cli = typer.Typer()
 def cli_main(
     ctx: BackupCLIContext,
     config: pathlib.Path = typer.Option(
-        applicationConfig.defaultConfigPath,
+        applicationConfig.default_config_path,
         envvar="SPGILL_BACKUP_CONFIG",
         help="Path to backup configuration file.",
     ),

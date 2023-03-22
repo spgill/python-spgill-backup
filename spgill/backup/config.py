@@ -7,15 +7,28 @@ import yaml
 # Local imports
 from . import helper, model
 
-# Default configuration file path exists in the user's home dir
-defaultConfigPath = pathlib.Path("~/.spgill.backup.yaml")
+CURRENT_CONFIG_VERSION = 4
 
-_defaultConfig = {
-    "v": 3,
-    "locations": {},
-    "policies": {},
-    "profiles": {},
-}
+# Default configuration file path exists in the user's home dir
+default_config_path = pathlib.Path("~/.spgill.backup.yaml")
+
+# TODO: Flesh this out more with some examples
+_default_config_contents = (
+    f"""
+v: {CURRENT_CONFIG_VERSION}
+
+# List of backup storage locations (aka repos)
+locations: []
+
+# List of backup policies, mapping locations and retention policies to re-usable names
+policies: []
+
+# List of backup profiles, mapping include/exclude rules to policies defined above
+profiles: []
+
+""".strip()
+    + "\n"
+)
 
 
 # Return the config values in the config file
@@ -28,18 +41,18 @@ def loadConfigValues(
     # If the config file doesn't already exist, create it
     if not configPath.exists():
         with configPath.open("w") as handle:
-            yaml.dump(_defaultConfig, handle)
+            handle.write(_default_config_contents)
 
     # Open and decode the config file
     with configPath.open("r") as handle:
-        parsed = model.RootBackupConfiguration.from_yaml(handle)
-        assert not isinstance(parsed, list)
-        values = parsed
+        parsed = yaml.load(handle, yaml.SafeLoader)
+        instance = model.RootBackupConfiguration(**parsed)
+        assert not isinstance(instance, list)
 
-        if values.v < _defaultConfig["v"]:
+        if instance.v is not None and instance.v < CURRENT_CONFIG_VERSION:
             helper.print_warning(
-                f'Warning: Config file located at "{configPath}" is possibly incompatible with the version of the backup tool you are using. Validate that the contents of the config file are compatible and update the "v" property to "v: {_defaultConfig["v"]}", or delete the "v" property entirely to suppress this warning in the future.'
+                f'Warning: Config file located at "{configPath}" is possibly incompatible with the version of the backup tool you are using. Validate that the contents of the config file are compatible and update the "v" property to "v: {CURRENT_CONFIG_VERSION}", or delete the "v" property entirely to suppress this warning in the future.'
             )
 
         # Finally, return the values
-        return values
+        return instance

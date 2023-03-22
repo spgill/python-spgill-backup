@@ -5,8 +5,9 @@ flake8
 # Package dependencies
 apscheduler
 click
-dataclass-wizard
 humanize
+mergedeep
+pydantic
 PyYAML
 rich
 sh >= 2.0

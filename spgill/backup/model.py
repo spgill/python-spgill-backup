@@ -1,13 +1,11 @@
 ### stdlib imports
-import dataclasses
 import typing
 
 ### vendor imports
-import dataclass_wizard
+import pydantic
 
 
-@dataclasses.dataclass
-class BackupLocation:
+class BackupLocation(pydantic.BaseModel):
     path: str
     password_file: typing.Optional[str] = None
     password_command: typing.Optional[str] = None
@@ -15,27 +13,7 @@ class BackupLocation:
     clean_env: typing.Optional[dict[str, str]] = None
 
 
-@dataclasses.dataclass
-class BackupSourceDef:
-    # Basic include args don't have flags they're just added at the end of the restic command
-    include: list[str] = dataclasses.field(default_factory=list)
-
-    # Include arguments with flags
-    include_files_from: str = ""
-    include_files_from_verbatim: str = ""
-
-    # Exclude arguments with flags
-    exclude: list[str] = dataclasses.field(default_factory=list)
-    iexclude: list[str] = dataclasses.field(default_factory=list)
-    exclude_if_present: list[str] = dataclasses.field(default_factory=list)
-    exclude_file: list[str] = dataclasses.field(default_factory=list)
-    iexclude_file: list[str] = dataclasses.field(default_factory=list)
-    exclude_caches: bool = False
-    exclude_larger_than: str = ""
-
-
-@dataclasses.dataclass
-class BackupRetention:
+class BackupRetention(pydantic.BaseModel):
     keep_last: typing.Optional[int] = None
     keep_within: typing.Optional[str] = None
 
@@ -46,31 +24,44 @@ class BackupRetention:
     keep_yearly: typing.Optional[int] = None
 
 
-@dataclasses.dataclass
-class BackupPolicy:
+class BackupPolicy(pydantic.BaseModel):
     location: typing.Optional[typing.Union[str, list[str]]]
     schedule: typing.Optional[str] = None
     retention: typing.Optional[BackupRetention] = None
 
 
-@dataclasses.dataclass
-class BackupProfile(BackupSourceDef):
+class BackupProfile(pydantic.BaseModel):
     policy: typing.Optional[str] = None
     hostname: typing.Optional[str] = None
     archive_name: typing.Optional[str] = None
-    tags: typing.Optional[list[str]] = None
-    groups: typing.Optional[dict[str, BackupSourceDef]] = None
-    args: typing.Optional[list[str]] = None
+    tags: list[str] = []
+    args: list[str] = []
+
+    ### Include/exclude fields ###
+
+    # Basic include args don't have flags they're just added at the end of the restic command
+    include: list[str] = []
+
+    # Include arguments with flags
+    include_files_from: list[str] = []
+    include_files_from_verbatim: list[str] = []
+
+    # Exclude arguments with flags
+    exclude: list[str] = []
+    iexclude: list[str] = []
+    exclude_if_present: list[str] = []
+    exclude_file: list[str] = []
+    iexclude_file: list[str] = []
+    exclude_caches: typing.Optional[bool] = None
+    exclude_larger_than: typing.Optional[str] = None
 
 
-@dataclasses.dataclass
-class ArchiveConfiguration:
+class ArchiveConfiguration(pydantic.BaseModel):
     cache: str
     password_file: str
 
 
-@dataclasses.dataclass
-class RootBackupConfiguration(dataclass_wizard.YAMLWizard):
+class RootBackupConfiguration(pydantic.BaseModel):
     locations: dict[str, BackupLocation]
     policies: dict[str, BackupPolicy]
     profiles: dict[str, BackupProfile]
