@@ -142,8 +142,11 @@ def get_location_arguments(
 
     # Generate cache dir args (only for destination repos)
     cache_args = []
-    if not from_repo and config.cache:
-        cache_args = ["--cache-dir", config.cache]
+    if not from_repo:
+        if config.cache:
+            cache_args = ["--cache-dir", config.cache]
+        else:
+            cache_args = ["--no-cache"]
 
     # Generate password args
     password_args = []
