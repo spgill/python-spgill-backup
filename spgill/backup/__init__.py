@@ -110,6 +110,7 @@ def cli_run(
     )
     if not snapshotMatch:
         helper.print_error("Error: Unable to parse the saved snapshot.")
+        exit(1)
     primarySnapshot = snapshotMatch.group(1)
 
     # If there are secondary locations and copying is enabled, begin copying the snapshot
@@ -233,7 +234,6 @@ def cli_snapshots(
     args = [
         *helper.get_location_arguments(config, location_name),
         "snapshots",
-        *helper.get_hostname_arguments(profile),
         *helper.get_tag_arguments(config, profile_name),
     ]
 
@@ -286,7 +286,6 @@ def cli_forget(
         args = [
             *helper.get_location_arguments(config, location_name),
             "forget",
-            *helper.get_hostname_arguments(profile),
             *helper.get_tag_arguments(config, profile_name),
             *helper.get_retention_arguments(config, policy),
         ]
@@ -370,6 +369,7 @@ def cli_archive(
         helper.print_error(
             "Error: Cannot find commands required for archive operation. Ensure 'openssl', 'pv', and 'zstd' are installed and available on PATH."
         )
+        exit(1)
 
     config = ctx.obj
     profile = helper.get_profile(config, profile_name)
@@ -404,13 +404,14 @@ def cli_archive(
     encryption_password_path: typing.Optional[pathlib.Path] = None
     encryption_enabled = encrypt
     if encryption_enabled:
-        encryption_password_value = (
-            archive_config.password_file if archive_config else password
+        encryption_password_value = password or (
+            archive_config.password_file if archive_config else None
         )
         if not encryption_password_value:
             helper.print_error(
                 "Archive encryption has been enabled, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
             )
+            exit(1)
         encryption_password_path = pathlib.Path(
             encryption_password_value
         ).expanduser()
@@ -606,6 +607,7 @@ def cli_decrypt(
         helper.print_error(
             "Error: Cannot find commands required for archive operation. Ensure 'openssl', 'pv', and 'zstd' are installed and available on PATH."
         )
+        exit(1)
 
     config = ctx.obj
 
@@ -617,10 +619,14 @@ def cli_decrypt(
     archive_password_value = (
         config.archive.password_file if config.archive else password
     )
+    archive_password_value = password or (
+        config.archive.password_file if config.archive else None
+    )
     if not archive_password_value:
         helper.print_error(
             "You are trying to decrypt an archive, but a password has not been provided. Please do so via the '--password' option or the appropriate configuration file value."
         )
+        exit(1)
     archive_password_path = pathlib.Path(archive_password_value).expanduser()
 
     # Pipe openssl to zstd and then stdout
