@@ -1,6 +1,11 @@
 FROM python:3-bullseye
 SHELL ["/bin/bash", "-c"]
 
+# Add Tini
+ENV TINI_VERSION v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+RUN chmod +x /tini
+
 RUN pip install --index https://python.spgill.me python-spgill-backup
 
 # Install tools
@@ -16,4 +21,4 @@ RUN wget https://github.com/restic/restic/releases/download/v0.15.1/restic_0.15.
     mv ./restic* /usr/local/bin/restic && \
     chmod +x /usr/local/bin/restic
 
-CMD python -m spgill.backup --config /opt/config.yaml daemon
+CMD /tini -v -- python -m spgill.backup --config /opt/config.yaml daemon
