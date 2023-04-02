@@ -782,3 +782,54 @@ def cli_daemon(
     except KeyboardInterrupt:
         helper.print_warning("Scheduler stopping...")
         exit()
+
+
+@cli.command(
+    name="mount",
+    help="Mount to the filesystem all snapshots belonging to a backup profile.",
+)
+def cli_mount(
+    ctx: BackupCLIContext,
+    profile_name: str = typer.Argument(
+        ..., metavar="PROFILE", help="Name of the backup profile to use."
+    ),
+    mount_point: pathlib.Path = typer.Argument(
+        ..., metavar="MOUNT", help="Filesystem mount point."
+    ),
+    location_name: typing.Optional[str] = typer.Option(
+        None,
+        "--location",
+        "-l",
+        help="Name of backup location to mount. Defaults to the primary backup location defined in the backup policy.",
+    ),
+):
+    config = ctx.obj
+
+    # Ensure that the mount point exists
+    if not mount_point.exists():
+        helper.print_error("Error: Mount point does not exist")
+        exit(1)
+
+    profile = helper.get_profile(config, profile_name)
+    helper.print_line(f"Backup profile: {profile_name}")
+
+    assert profile.policy
+    policy = helper.get_policy(config, profile.policy)
+    helper.print_line(f"Backup policy: {profile.policy}")
+
+    locations = helper.get_policy_locations(policy)
+    location_name = location_name or locations[0]
+    location_env = helper.get_execution_env(config, location_name)
+    helper.print_line(f"Backup location: {location_name}")
+
+    # Construct the restic args
+    args = [
+        *helper.get_location_arguments(config, location_name),
+        "mount",
+        *helper.get_tag_arguments(config, profile_name),
+        str(mount_point),
+    ]
+
+    helper.print_line("Mounting...")
+
+    command.restic(*args, _env=location_env, _fg=True)
