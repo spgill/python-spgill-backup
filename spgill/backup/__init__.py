@@ -717,11 +717,7 @@ def cli_copy(
     # Get env vars for the source and destination, and make sure there's no overlap
     sourceEnv = helper.get_execution_env(config, source)
     destinationEnv = helper.get_execution_env(config, destination)
-    intersection = [k for k in sourceEnv if k in destinationEnv]
-    if len(intersection) > 0:
-        helper.print_error(
-            "Error: Source and destination location environment variables overlap. Consider copying to an intermediate location first."
-        )
+    helper.assert_no_env_collision(config, source, destination)
 
     # Execute the restic command
     command.restic(args, _env={**sourceEnv, **destinationEnv}, _fg=True)

@@ -188,7 +188,7 @@ def get_tag_arguments(
 def get_execution_env(
     config: model.RootBackupConfiguration,
     location_name: str,
-) -> dict:
+) -> dict[str, str]:
     location = get_location(config, location_name)
 
     # If "clean_env" property is used, we will start with a clean environment
@@ -197,6 +197,26 @@ def get_execution_env(
 
     # Else, we will augment the execution environment with the "env" property (if defined)
     return {**dict(os.environ), **(location.env or {})}
+
+
+def assert_no_env_collision(
+    config: model.RootBackupConfiguration,
+    location_a_name: str,
+    location_b_name: str,
+) -> None:
+    """Assures there is no overlap between the environment variables for two different backup locations."""
+    location_a = get_location(config, location_a_name)
+    location_a_env = location_a.clean_env or location_a.env or {}
+
+    location_b = get_location(config, location_b_name)
+    location_b_env = location_b.clean_env or location_b.env or {}
+
+    intersection = [k for k in location_a_env if k in location_b_env]
+    if len(intersection) > 0:
+        print_error(
+            "Error: Environment variables of source and destination backup locations have overlap. Aborting execution."
+        )
+        exit(1)
 
 
 def fully_qualified_path(
