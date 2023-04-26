@@ -70,10 +70,13 @@ def cli_run(
         "-g",
         help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run/", "-n", help="Do not upload or write any data."
+    ),
     no_copy: bool = typer.Option(
         False,
         "--no-copy/",
-        "-n/",
+        "-N/",
         help="Disable copying the resulting snapshot to secondary locations, if defined.",
     ),
     locations_override: typing.Optional[list[str]] = typer.Option(
@@ -113,6 +116,15 @@ def cli_run(
         *(profile.args or []),
     ]
 
+    # Add dry run argument if necessary
+    if dry_run:
+        args.append("--dry-run")
+
+    # If in verbose execution, print the command
+    if ctx.obj.verbose:
+        helper.print_line("Restic command:")
+        print(shlex.join(["restic", *args]))
+
     # Execute the backup and parse out the saved snapshot ID
     helper.print_line("Executing backup...")
     primaryLocationEnv = helper.get_execution_env(
@@ -123,6 +135,11 @@ def cli_run(
     )
     if backupProc is None or isinstance(backupProc, str):
         helper.print_error("Unknown error in execution of backup")
+
+    # If this is a dry run, go ahead and exit
+    if dry_run:
+        helper.print_line("Dry run complete")
+        exit()
 
     snapshotMatch = re.search(
         r"snapshot (\w+) saved", backupProc.stdout.decode()
