@@ -1,4 +1,5 @@
 # Stdlib imports
+import dataclasses
 import datetime
 import json
 import pathlib
@@ -19,10 +20,15 @@ import sh
 from . import helper, command, config as applicationConfig, model
 
 
+@dataclasses.dataclass
+class BackupContextObject:
+    config: model.RootBackupConfiguration
+    verbose: bool
+
+
 # Create a subclass of the context with correct typing of the backup config object
 class BackupCLIContext(typer.Context):
-    obj: model.RootBackupConfiguration
-    verbose: bool
+    obj: BackupContextObject
 
 
 # Initialize the typer app
@@ -49,8 +55,9 @@ def cli_main(
     ),
 ):
     # Load the config options and insert it into the context object
-    ctx.obj = applicationConfig.loadConfigValues(config)
-    ctx.verbose = verbose
+    ctx.obj = BackupContextObject(
+        config=applicationConfig.loadConfigValues(config), verbose=verbose
+    )
 
 
 @cli.command(name="run", help="Execute a backup profile now.")
@@ -76,7 +83,7 @@ def cli_run(
         help="Manually specify backup location(s). You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile. Implies the '--no-copy' option.",
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     profile = helper.get_profile(config, name)
     assert profile.policy
@@ -172,7 +179,7 @@ def cli_execute(
         ..., help="Name of the backup location to use when executing restic."
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     # Collate everything, with unprocessed args, into a list
     args = [
@@ -202,7 +209,7 @@ def cli_command(
         ..., help="Name of the backup location."
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
     location = helper.get_location(config, location_name)
 
     # We need to convert any environment vars to key=value pairs
@@ -241,7 +248,7 @@ def cli_snapshots(
         help="Manually specify a backup location. Location does not have to be defined as a part of the backup profile.",
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
     profile = helper.get_profile(config, profile_name)
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
@@ -293,7 +300,7 @@ def cli_forget(
         help="Manually specify a backup location to apply retention policy to. You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile.",
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
     profile = helper.get_profile(config, profile_name)
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
@@ -332,7 +339,7 @@ def cli_prune(
         ..., help="Name of the backup location to use when executing restic."
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     # Assemble arguments for the command
     args = [*helper.get_location_arguments(config, location_name), "prune"]
@@ -389,7 +396,7 @@ def cli_archive(
         )
         exit(1)
 
-    config = ctx.obj
+    config = ctx.obj.config
     profile = helper.get_profile(config, profile_name)
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
@@ -627,7 +634,7 @@ def cli_decrypt(
         )
         exit(1)
 
-    config = ctx.obj
+    config = ctx.obj.config
 
     # Ensure output is NOT a terminal
     if hasattr(stream_output, "isatty") and stream_output.isatty():
@@ -675,7 +682,7 @@ def cli_decrypt(
     help="List all backup locations and backup profiles defined in the configuration file.",
 )
 def cli_list(ctx: BackupCLIContext):
-    config = ctx.obj
+    config = ctx.obj.config
 
     # Locations
     locations = config.locations
@@ -720,7 +727,7 @@ def cli_copy(
         help="IDs of one or more snapshots to copy from the source to the destination.",
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     if source == destination:
         helper.print_error(
@@ -747,7 +754,7 @@ def cli_copy(
 def cli_daemon(
     ctx: BackupCLIContext,
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     helper.print_line("Scheduling jobs for applicable profiles...")
     scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
@@ -821,7 +828,7 @@ def cli_mount(
         help="Name of backup location to mount. Defaults to the primary backup location defined in the backup policy.",
     ),
 ):
-    config = ctx.obj
+    config = ctx.obj.config
 
     # Ensure that the mount point exists
     if not mount_point.exists():
