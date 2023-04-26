@@ -22,6 +22,7 @@ from . import helper, command, config as applicationConfig, model
 # Create a subclass of the context with correct typing of the backup config object
 class BackupCLIContext(typer.Context):
     obj: model.RootBackupConfiguration
+    verbose: bool
 
 
 # Initialize the typer app
@@ -37,9 +38,17 @@ def cli_main(
         envvar="SPGILL_BACKUP_CONFIG",
         help="Path to backup configuration file.",
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose/",
+        "-v/",
+        envvar="SPGILL_BACKUP_VERBOSE",
+        help="Print verbose information when executing commands.",
+    ),
 ):
     # Load the config options and insert it into the context object
     ctx.obj = applicationConfig.loadConfigValues(config)
+    ctx.verbose = verbose
 
 
 @cli.command(name="run", help="Execute a backup profile now.")
