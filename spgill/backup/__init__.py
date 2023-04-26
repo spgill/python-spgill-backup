@@ -13,6 +13,7 @@ import typing
 import apscheduler.executors.pool
 import apscheduler.schedulers.blocking
 import apscheduler.triggers.cron
+import sh
 
 # Local imports
 from . import helper, command, config as applicationConfig, model
@@ -169,9 +170,15 @@ def cli_execute(
     ]
 
     # Execute the command
-    command.restic(
-        args, _env=helper.get_execution_env(config, location_name), _fg=True
-    )
+    try:
+        command.restic(
+            args,
+            _env=helper.get_execution_env(config, location_name),
+            _fg=True,
+        )
+    except sh.ErrorReturnCode as err:
+        # Catch error codes and pass them through this tool's exit
+        exit(err.exit_code)
 
 
 @cli.command(
