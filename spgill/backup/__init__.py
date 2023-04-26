@@ -24,6 +24,7 @@ from . import helper, command, config as applicationConfig, model
 class BackupContextObject:
     config: model.RootBackupConfiguration
     verbose: bool
+    dry_run: bool
 
 
 # Create a subclass of the context with correct typing of the backup config object
@@ -53,11 +54,26 @@ def cli_main(
         envvar="SPGILL_BACKUP_VERBOSE",
         help="Print verbose information when executing commands.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/",
+        "-n/",
+        envvar="SPGILL_BACKUP_DRY_RUN",
+        help="Do not upload or write any data. Not supported by all commands.",
+    ),
 ):
     # Load the config options and insert it into the context object
     ctx.obj = BackupContextObject(
-        config=applicationConfig.loadConfigValues(config), verbose=verbose
+        config=applicationConfig.loadConfigValues(config),
+        verbose=verbose,
+        dry_run=dry_run,
     )
+
+    # Print warning message if this is a dry run
+    if dry_run:
+        helper.print_warning(
+            "Executing as a dry-run. This may not be supported by all commands."
+        )
 
 
 @cli.command(name="run", help="Execute a backup profile now.")
@@ -69,9 +85,6 @@ def cli_run(
         "--group",
         "-g",
         help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run/", "-n", help="Do not upload or write any data."
     ),
     no_copy: bool = typer.Option(
         False,
@@ -87,6 +100,7 @@ def cli_run(
     ),
 ):
     config = ctx.obj.config
+    dry_run = ctx.obj.dry_run
 
     profile = helper.get_profile(config, name)
     assert profile.policy
@@ -298,12 +312,6 @@ def cli_forget(
     profile_name: str = typer.Argument(
         ..., help="Name of the backup profile."
     ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run/",
-        "-n/",
-        help="Make no changes, only simulate the forget operation.",
-    ),
     prune: bool = typer.Option(
         False,
         "--prune/",
@@ -318,6 +326,8 @@ def cli_forget(
     ),
 ):
     config = ctx.obj.config
+    dry_run = ctx.obj.dry_run
+
     profile = helper.get_profile(config, profile_name)
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
