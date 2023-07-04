@@ -304,10 +304,10 @@ def cli_snapshots(
 
 
 @cli.command(
-    name="forget",
-    help="Remove snapshots from a backup profile individually or according to a retention policy. By default, will be applied to all location defined in the backup profile.",
+    name="apply",
+    help="Apply a retention policy to selectively remove snapshots from a backup location. By default, will be applied to all location defined in the backup profile.",
 )
-def cli_forget(
+def cli_apply(
     ctx: BackupCLIContext,
     profile_name: str = typer.Argument(
         ..., help="Name of the backup profile."
@@ -334,10 +334,14 @@ def cli_forget(
     locations = locations_override or helper.get_policy_locations(policy)
 
     for location_name in locations:
+        helper.print_line(f"Applying policy to '{location_name}'...")
         # Assemble arguments for the command
         args = [
             *helper.get_location_arguments(config, location_name),
             "forget",
+            # We need to disable grouping or else adding paths/tags/etc. will mess up the policy
+            "--group-by",
+            "",
             *helper.get_tag_arguments(config, profile_name),
             *helper.get_retention_arguments(config, policy),
         ]
