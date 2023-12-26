@@ -1,7 +1,7 @@
 #!/bin/bash
 FILE="Dockerfile"
 TAG="docker.home.spgill.me/backup"
-FROM="python:3-bullseye"
+FROM="python:3.11-slim-bookworm"
 PUSH=true
 
 docker rmi "$TAG:previous"

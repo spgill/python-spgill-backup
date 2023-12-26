@@ -389,7 +389,7 @@ def cli_prune(
     WARNING: Only designed to work in a Linux/macOS environment.
     """,
 )
-def cli_archive(
+def cli_archive(  # noqa: C901
     ctx: BackupCLIContext,
     destination: pathlib.Path = typer.Argument(
         ..., help="Destination directory for the archive file."
@@ -795,6 +795,7 @@ def cli_daemon(
         job_defaults={
             "misfire_grace_time": None,
             "coalesce": True,
+            "max_instances": 1
         },
     )
     jobs_added = False

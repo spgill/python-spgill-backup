@@ -1,4 +1,4 @@
-FROM python:3-bullseye
+FROM python:3.11-slim-bookworm
 SHELL ["/bin/bash", "-c"]
 
 # Add Tini
@@ -16,7 +16,7 @@ RUN apt update && \
 
 # Install Restic
 WORKDIR /tmp
-RUN wget https://github.com/restic/restic/releases/download/v0.15.1/restic_0.15.1_linux_amd64.bz2 && \
+RUN wget https://github.com/restic/restic/releases/download/v0.16.2/restic_0.16.2_linux_amd64.bz2 && \
     bzip2 -d ./restic* && \
     mv ./restic* /usr/local/bin/restic && \
     chmod +x /usr/local/bin/restic
