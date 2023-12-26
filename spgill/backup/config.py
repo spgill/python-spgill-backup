@@ -18,13 +18,13 @@ _default_config_contents = (
 v: {CURRENT_CONFIG_VERSION}
 
 # List of backup storage locations (aka repos)
-locations: []
+locations: {{}}
 
 # List of backup policies, mapping locations and retention policies to re-usable names
-policies: []
+policies: {{}}
 
 # List of backup profiles, mapping include/exclude rules to policies defined above
-profiles: []
+profiles: {{}}
 
 """.strip()
     + "\n"
