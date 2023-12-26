@@ -4,7 +4,15 @@ import typing
 ### vendor imports
 import sh
 
-restic = sh.Command("restic")
+### local imports
+from . import helper
+
+try:
+    restic = sh.Command("restic")
+except sh.CommandNotFound:
+    helper.print_error(
+        "You must install restic and ensure its binary is in the terminal's PATH before running spgill-backup."
+    )
 
 
 # These three commands are only needed for working with archives
