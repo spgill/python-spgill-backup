@@ -64,6 +64,7 @@ def get_location(
     if not (location := config.locations.get(name, None)):
         print_error(f"Error: No backup location found by name '{name}'")
 
+    assert location is not None
     return location
 
 
@@ -94,6 +95,8 @@ def get_profile(
     if not (profile := config.profiles.get(name, None)):
         print_error(f"Error: No backup profile found by name '{name}'")
 
+    assert profile is not None
+
     # Ensure there is a policy defined for the profile
     if not profile.policy:
         print_error(f"Error: Backup profile '{name}' has no policy defined")
@@ -106,6 +109,8 @@ def get_policy(
 ) -> model.BackupPolicy:
     if not (policy := config.policies.get(name, None)):
         print_error(f"Error: No backup policy found by name '{name}'")
+
+    assert policy is not None
 
     # Ensure location is defined
     if not policy.location:
