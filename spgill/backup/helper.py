@@ -204,12 +204,20 @@ def get_execution_env(
     return {**dict(os.environ), **(location.env or {})}
 
 
-def assert_no_env_collision(
+def validate_two_repo_operation(
     config: model.RootBackupConfiguration,
     location_a_name: str,
     location_b_name: str,
 ) -> None:
-    """Assures there is no overlap between the environment variables for two different backup locations."""
+    """Validate that two user-provided locations names are compatible for a cross-repo operation."""
+    # First, just make sure they aren't the same location
+    if location_a_name == location_b_name:
+        print_error(
+            "Error: You can't perform this operation on the same backup location. Exiting..."
+        )
+
+    # Next we check that the two location's environment vars don't overlap.
+    # This is a limitation of restic's implementation of S3/B2/etc.
     location_a = get_location(config, location_a_name)
     location_a_env = location_a.clean_env or location_a.env or {}
 
@@ -219,9 +227,8 @@ def assert_no_env_collision(
     intersection = [k for k in location_a_env if k in location_b_env]
     if len(intersection) > 0:
         print_error(
-            "Error: Environment variables of source and destination backup locations have overlap. Aborting execution."
+            "Error: These backup locations are incompatible because they have conflicting environment variables. Consider working with a separate local backup location as a middle man, or using rclone. Exiting..."
         )
-        exit(1)
 
 
 def fully_qualified_path(

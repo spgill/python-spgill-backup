@@ -811,10 +811,8 @@ def app_copy(
 ):
     config = ctx.obj.config
 
-    if source == destination:
-        helper.print_error(
-            "Error: Source and destination of copy can't be the same!"
-        )
+    # Quickly validate that both locations can be used together
+    helper.validate_two_repo_operation(config, source, destination)
 
     # Assemble arguments for the command
     sourceArgs = helper.get_location_arguments(config, source, True)
