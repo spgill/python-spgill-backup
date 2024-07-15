@@ -33,12 +33,12 @@ class BackupCLIContext(typer.Context):
 
 
 # Initialize the typer app
-cli = typer.Typer()
+app = typer.Typer()
 
 
 # Main method that initializes the configuration and makes it available to all commands
-@cli.callback()
-def cli_main(
+@app.callback()
+def app_main(
     ctx: BackupCLIContext,
     config: pathlib.Path = typer.Option(
         applicationConfig.default_config_path,
@@ -76,8 +76,8 @@ def cli_main(
         )
 
 
-@cli.command(name="run", help="Execute a backup profile now.")
-def cli_run(
+@app.command(name="run", help="Execute a backup profile now.")
+def app_run(
     ctx: BackupCLIContext,
     name: str = typer.Argument(..., help="Name of the backup profile to use."),
     groups: list[str] = typer.Option(
@@ -195,7 +195,7 @@ def cli_run(
     helper.print_line(f"Finished at {datetime.datetime.now()}")
 
 
-@cli.command(
+@app.command(
     name="execute",
     context_settings={
         "allow_extra_args": True,
@@ -204,7 +204,7 @@ def cli_run(
     },
     help="Execute the restic command line application directly. All arguments pertaining to the backup location (repo, cache, password, etc.) are appended automatically. Every argument after LOCATION will be passed directly to the restic command.",
 )
-def cli_execute(
+def app_execute(
     ctx: BackupCLIContext,
     location_name: str = typer.Argument(
         ..., help="Name of the backup location to use when executing restic."
@@ -230,11 +230,11 @@ def cli_execute(
         exit(err.exit_code)
 
 
-@cli.command(
+@app.command(
     name="command",
     help="Write the basic restic command for a backup location to stdout. Includes all arguments pertaining to the backup location (repo, cache, password, etc), as well as any environment variables necessary. Helpful for using a repo in an external script.",
 )
-def cli_command(
+def app_command(
     ctx: BackupCLIContext,
     location_name: str = typer.Argument(
         ..., help="Name of the backup location."
@@ -262,10 +262,10 @@ def cli_command(
     )
 
 
-@cli.command(
+@app.command(
     name="snapshots", help="List all snapshots found for the given profile."
 )
-def cli_snapshots(
+def app_snapshots(
     ctx: BackupCLIContext,
     profile_name: str = typer.Argument(
         ...,
@@ -303,11 +303,11 @@ def cli_snapshots(
     )
 
 
-@cli.command(
+@app.command(
     name="apply",
     help="Apply a retention policy to selectively remove snapshots from a backup location. By default, will be applied to all location defined in the backup profile.",
 )
-def cli_apply(
+def app_apply(
     ctx: BackupCLIContext,
     profile_name: str = typer.Argument(
         ..., help="Name of the backup profile."
@@ -360,11 +360,11 @@ def cli_apply(
         )
 
 
-@cli.command(
+@app.command(
     name="prune",
     help="Prune a storage location of unused data packs.",
 )
-def cli_prune(
+def app_prune(
     ctx: BackupCLIContext,
     location_name: str = typer.Argument(
         ..., help="Name of the backup location to use when executing restic."
@@ -381,7 +381,7 @@ def cli_prune(
     )
 
 
-@cli.command(
+@app.command(
     name="archive",
     help="""
     Extract and archive one or more snapshots from a backup location. Snapshots will be stored as ".tar" archives.
@@ -389,7 +389,7 @@ def cli_prune(
     WARNING: Only designed to work in a Linux/macOS environment.
     """,
 )
-def cli_archive(  # noqa: C901
+def app_archive(  # noqa: C901
     ctx: BackupCLIContext,
     destination: pathlib.Path = typer.Argument(
         ..., help="Destination directory for the archive file."
@@ -641,11 +641,11 @@ def cli_archive(  # noqa: C901
         )
 
 
-@cli.command(
+@app.command(
     name="decrypt",
     help="Helper command for decrypting a snapshot archive that has been encrypted by this tool on export.",
 )
-def cli_decrypt(
+def app_decrypt(
     ctx: BackupCLIContext,
     stream_input: typer.FileBinaryRead = typer.Argument(..., metavar="INPUT"),
     stream_output: typer.FileBinaryWrite = typer.Argument(
@@ -708,11 +708,11 @@ def cli_decrypt(
     )
 
 
-@cli.command(
+@app.command(
     name="list",
     help="List all backup locations and backup profiles defined in the configuration file.",
 )
-def cli_list(ctx: BackupCLIContext):
+def app_list(ctx: BackupCLIContext):
     config = ctx.obj.config
 
     # Locations
@@ -743,8 +743,8 @@ def cli_list(ctx: BackupCLIContext):
     helper.print()
 
 
-@cli.command(name="copy", help="Copy a snapshot from one location to another.")
-def cli_copy(
+@app.command(name="copy", help="Copy a snapshot from one location to another.")
+def app_copy(
     ctx: BackupCLIContext,
     source: str = typer.Argument(
         ..., help="Source location; where the snapshot will be copied FROM."
@@ -779,11 +779,11 @@ def cli_copy(
     command.restic(args, _env={**sourceEnv, **destinationEnv}, _fg=True)
 
 
-@cli.command(
+@app.command(
     name="mount",
     help="Mount to the filesystem all snapshots belonging to a backup profile.",
 )
-def cli_mount(
+def app_mount(
     ctx: BackupCLIContext,
     profile_name: str = typer.Argument(
         ..., metavar="PROFILE", help="Name of the backup profile to use."
@@ -831,14 +831,14 @@ def cli_mount(
 
 
 # region Daemon implementation
-@cli.command(
+@app.command(
     name="daemon",
     help="""
         Run the backup orchestrator daemon (service) in blocking mode.
         Will execute backup profiles according to their policy schedule.
     """,
 )
-def cli_daemon(
+def app_daemon(
     ctx: BackupCLIContext,
 ):
     """
@@ -877,7 +877,7 @@ def cli_daemon(
             scheduler.add_job(
                 id=profile_name,
                 trigger=trigger,
-                func=cli_run,
+                func=app_run,
                 args=[ctx],
                 kwargs={
                     "name": profile_name,
