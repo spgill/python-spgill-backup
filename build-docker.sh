@@ -1,7 +1,11 @@
 #!/bin/bash
+
+# First, concat the gitignore and custom.dockerignore modifiers into the final .dockerignore
+cat .gitignore custom.dockerignore > .dockerignore
+
 FILE="Dockerfile"
 TAG="docker.home.spgill.me/backup"
-FROM="python:3.11-slim-bookworm"
+FROM="python:3.11-alpine"
 PUSH=true
 
 docker rmi "$TAG:previous"

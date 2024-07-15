@@ -1,0 +1,5 @@
+# Contents of this will be combined with .gitignore and added to .dockerignore at build time
+.dockerignore
+.git
+.vscode
+Dockerfile

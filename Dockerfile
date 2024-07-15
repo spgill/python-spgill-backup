@@ -1,24 +1,18 @@
-FROM python:3.11-slim-bookworm
-SHELL ["/bin/bash", "-c"]
+FROM python:3.11-alpine
+SHELL ["/bin/sh", "-c"]
 
-# Add Tini
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
-RUN chmod +x /tini
+# Install the backup package
+COPY . /tmp
+RUN pip install /tmp && rm -rf /tmp
 
-RUN pip install --index https://python.spgill.me python-spgill-backup
+# Install tools from apk
+RUN apk add --no-cache wget bzip2 tini
 
-# Install tools
-RUN apt update && \
-    apt -y install --no-install-recommends wget && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt clean
-
-# Install Restic
-WORKDIR /tmp
-RUN wget https://github.com/restic/restic/releases/download/v0.16.2/restic_0.16.2_linux_amd64.bz2 && \
+# Install Restic from github (apk version is slightly behind)
+ENV RESTIC_VERSION 0.16.5
+RUN wget https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2 && \
     bzip2 -d ./restic* && \
     mv ./restic* /usr/local/bin/restic && \
     chmod +x /usr/local/bin/restic
 
-CMD /tini -v -- python -m spgill.backup --config /opt/config.yaml daemon
+CMD tini -v -- python -m spgill.backup --config /opt/config.yaml daemon
