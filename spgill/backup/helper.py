@@ -288,15 +288,15 @@ def get_inclusion_arguments(
     if profile.exclude_caches:
         yield "--exclude-caches"
 
-    if excludeSize := profile.exclude_larger_than:
+    if exclude_size := profile.exclude_larger_than:
         # In case the user specifies a number with a suffix, this will probably be a number
         # and an error should be thrown
-        if not isinstance(excludeSize, str):
+        if not isinstance(exclude_size, str):
             print_error(
-                f"Option 'exclude_larger_than' should always be a string, not '{excludeSize}' ({type(excludeSize)})"
+                f"Option 'exclude_larger_than' should always be a string, not '{exclude_size}' ({type(exclude_size)})"
             )
         yield "--exclude-larger-than"
-        yield excludeSize
+        yield exclude_size
 
     # Emit basic include lines
     for entry in include_list:
@@ -354,7 +354,7 @@ def run_command_politely(
     command: sh.Command,
     args: list[typing.Any],
     env: dict = {},
-    okCodes: list[int] = [0],
+    ok_codes: list[int] = [0],
 ):
     # Start the command
     running_proc = command(
@@ -365,7 +365,7 @@ def run_command_politely(
         _out=sys.stdout,
         _err=sys.stderr,
         _tee=True,
-        _ok_code=okCodes,
+        _ok_code=ok_codes,
     )
 
     # The running process should not be a string

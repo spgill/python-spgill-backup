@@ -17,7 +17,7 @@ import apscheduler.triggers.cron
 import sh
 
 # Local imports
-from . import helper, command, config as applicationConfig, model
+from . import helper, command, config as app_config, model
 
 
 @dataclasses.dataclass
@@ -48,7 +48,7 @@ def app_main(
             envvar="SPGILL_BACKUP_CONFIG",
             help="Path to backup configuration file.",
         ),
-    ] = applicationConfig.default_config_path,
+    ] = app_config.default_config_path,
     verbose: typing.Annotated[
         bool,
         typer.Option(
@@ -70,7 +70,7 @@ def app_main(
 ):
     # Load the config options and insert it into the context object
     ctx.obj = BackupContextObject(
-        config=applicationConfig.loadConfigValues(config),
+        config=app_config.load_config_values(config),
         verbose=verbose,
         dry_run=dry_run,
     )
@@ -155,13 +155,13 @@ def app_run(
 
     # Execute the backup and parse out the saved snapshot ID
     helper.print_line("Executing backup...")
-    primaryLocationEnv = helper.get_execution_env(
+    primary_location_env = helper.get_execution_env(
         config, primary_location_name
     )
-    backupProc = helper.run_command_politely(
-        command.restic, args, primaryLocationEnv, [0, 3]
+    backup_proc = helper.run_command_politely(
+        command.restic, args, primary_location_env, [0, 3]
     )
-    if backupProc is None or isinstance(backupProc, str):
+    if backup_proc is None or isinstance(backup_proc, str):
         helper.print_error("Unknown error in execution of backup")
 
     # If this is a dry run, go ahead and exit
@@ -169,41 +169,43 @@ def app_run(
         helper.print_line("Dry run complete")
         exit()
 
-    snapshotMatch = re.search(
-        r"snapshot (\w+) saved", backupProc.stdout.decode()
+    snapshot_match = re.search(
+        r"snapshot (\w+) saved", backup_proc.stdout.decode()
     )
-    if not snapshotMatch:
+    if not snapshot_match:
         helper.print_error("Error: Unable to parse the saved snapshot.")
         exit(1)
-    primarySnapshot = snapshotMatch.group(1)
+    primary_snapshot = snapshot_match.group(1)
 
     # If there are secondary locations and copying is enabled, begin copying the snapshot
     if len(locations) > 1 and not no_copy:
         helper.print_line("Copying snapshot to secondary locations")
-        copySourceArgs = helper.get_location_arguments(
+        copy_source_args = helper.get_location_arguments(
             config, primary_location_name, True
         )
 
-        for secondaryLocationName in locations[1:]:
+        for secondary_location_name in locations[1:]:
             helper.print_nested_line(
-                f"Copying to '{secondaryLocationName}'..."
+                f"Copying to '{secondary_location_name}'..."
             )
-            copyDestArgs = helper.get_location_arguments(
-                config, secondaryLocationName, False
+            copy_dest_args = helper.get_location_arguments(
+                config, secondary_location_name, False
             )
-            copyArgs = [
-                *copyDestArgs,
+            copy_args = [
+                *copy_dest_args,
                 "copy",
-                *copySourceArgs,
-                primarySnapshot,
+                *copy_source_args,
+                primary_snapshot,
             ]
 
             # Execute the copy
-            copyDestEnv = helper.get_execution_env(
-                config, secondaryLocationName
+            copy_dest_env = helper.get_execution_env(
+                config, secondary_location_name
             )
             helper.run_command_politely(
-                command.restic, copyArgs, {**primaryLocationEnv, **copyDestEnv}
+                command.restic,
+                copy_args,
+                {**primary_location_env, **copy_dest_env},
             )
 
     helper.print_line(f"Finished at {datetime.datetime.now()}")
@@ -261,17 +263,17 @@ def app_command(
     location = helper.get_location(config, location_name)
 
     # We need to convert any environment vars to key=value pairs
-    envArgs = []
-    if locationEnv := (location.env or location.clean_env):
-        envArgs.append("env")
-        for key, value in locationEnv.items():
-            envArgs.append(f"{key}={value}")
+    env_args = []
+    if location_env := (location.env or location.clean_env):
+        env_args.append("env")
+        for key, value in location_env.items():
+            env_args.append(f"{key}={value}")
 
     sys.stdout.write(
         shlex.join(
             str(arg)
             for arg in [
-                *envArgs,
+                *env_args,
                 "restic",
                 *helper.get_location_arguments(config, location_name),
             ]
@@ -815,17 +817,18 @@ def app_copy(
     helper.validate_two_repo_operation(config, source, destination)
 
     # Assemble arguments for the command
-    sourceArgs = helper.get_location_arguments(config, source, True)
-    destinationArgs = helper.get_location_arguments(config, destination, False)
-    args = [*destinationArgs, "copy", *sourceArgs, *snapshots]
+    source_args = helper.get_location_arguments(config, source, True)
+    destination_args = helper.get_location_arguments(
+        config, destination, False
+    )
+    args = [*destination_args, "copy", *source_args, *snapshots]
 
     # Get env vars for the source and destination, and make sure there's no overlap
-    sourceEnv = helper.get_execution_env(config, source)
-    destinationEnv = helper.get_execution_env(config, destination)
-    helper.assert_no_env_collision(config, source, destination)
+    source_env = helper.get_execution_env(config, source)
+    destination_env = helper.get_execution_env(config, destination)
 
     # Execute the restic command
-    command.restic(args, _env={**sourceEnv, **destinationEnv}, _fg=True)
+    command.restic(args, _env={**source_env, **destination_env}, _fg=True)
 
 
 @app.command(

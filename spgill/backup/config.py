@@ -32,26 +32,26 @@ profiles: {{}}
 
 
 # Return the config values in the config file
-def loadConfigValues(
-    configPath: pathlib.Path,
+def load_config_values(
+    config_path: pathlib.Path,
 ) -> model.RootBackupConfiguration:
     # Resolve the path string to a path object
-    configPath = configPath.expanduser()
+    config_path = config_path.expanduser()
 
     # If the config file doesn't already exist, create it
-    if not configPath.exists():
-        with configPath.open("w") as handle:
+    if not config_path.exists():
+        with config_path.open("w") as handle:
             handle.write(_default_config_contents)
 
     # Open and decode the config file
-    with configPath.open("r") as handle:
+    with config_path.open("r") as handle:
         parsed = yaml.load(handle, yaml.SafeLoader)
         instance = model.RootBackupConfiguration(**parsed)
         assert not isinstance(instance, list)
 
         if instance.v is not None and instance.v < CURRENT_CONFIG_VERSION:
             helper.print_warning(
-                f'Warning: Config file located at "{configPath}" is possibly incompatible with the version of the backup tool you are using. Validate that the contents of the config file are compatible and update the "v" property to "v: {CURRENT_CONFIG_VERSION}", or delete the "v" property entirely to suppress this warning in the future.'
+                f'Warning: Config file located at "{config_path}" is possibly incompatible with the version of the backup tool you are using. Validate that the contents of the config file are compatible and update the "v" property to "v: {CURRENT_CONFIG_VERSION}", or delete the "v" property entirely to suppress this warning in the future.'
             )
 
         # Finally, return the values
