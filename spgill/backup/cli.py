@@ -40,27 +40,33 @@ app = typer.Typer()
 @app.callback()
 def app_main(
     ctx: BackupCLIContext,
-    config: pathlib.Path = typer.Option(
-        applicationConfig.default_config_path,
-        "--config",
-        "-c",
-        envvar="SPGILL_BACKUP_CONFIG",
-        help="Path to backup configuration file.",
-    ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose/",
-        "-v/",
-        envvar="SPGILL_BACKUP_VERBOSE",
-        help="Print verbose information when executing commands.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run/",
-        "-n/",
-        envvar="SPGILL_BACKUP_DRY_RUN",
-        help="Do not upload or write any data. Not supported by all commands.",
-    ),
+    config: typing.Annotated[
+        pathlib.Path,
+        typer.Option(
+            "--config",
+            "-c",
+            envvar="SPGILL_BACKUP_CONFIG",
+            help="Path to backup configuration file.",
+        ),
+    ] = applicationConfig.default_config_path,
+    verbose: typing.Annotated[
+        bool,
+        typer.Option(
+            "--verbose/",
+            "-v/",
+            envvar="SPGILL_BACKUP_VERBOSE",
+            help="Print verbose information when executing commands.",
+        ),
+    ] = False,
+    dry_run: typing.Annotated[
+        bool,
+        typer.Option(
+            "--dry-run/",
+            "-n/",
+            envvar="SPGILL_BACKUP_DRY_RUN",
+            help="Do not upload or write any data. Not supported by all commands.",
+        ),
+    ] = False,
 ):
     # Load the config options and insert it into the context object
     ctx.obj = BackupContextObject(
@@ -79,25 +85,33 @@ def app_main(
 @app.command(name="run", help="Execute a backup profile now.")
 def app_run(
     ctx: BackupCLIContext,
-    name: str = typer.Argument(..., help="Name of the backup profile to use."),
-    groups: list[str] = typer.Option(
-        [],
-        "--group",
-        "-g",
-        help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
-    ),
-    no_copy: bool = typer.Option(
-        False,
-        "--no-copy/",
-        "-N/",
-        help="Disable copying the resulting snapshot to secondary locations, if defined.",
-    ),
-    locations_override: typing.Optional[list[str]] = typer.Option(
-        None,
-        "--location",
-        "-l",
-        help="Manually specify backup location(s). You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile. Implies the '--no-copy' option.",
-    ),
+    name: typing.Annotated[
+        str, typer.Argument(help="Name of the backup profile to use.")
+    ],
+    groups: typing.Annotated[
+        list[str],
+        typer.Option(
+            "--group",
+            "-g",
+            help="Specify a particular backup profile group to include in the backup run. The root group definitions will always be included. If no group is explicitly provided, all defined groups will be included.",
+        ),
+    ] = [],
+    no_copy: typing.Annotated[
+        bool,
+        typer.Option(
+            "--no-copy/",
+            "-N/",
+            help="Disable copying the resulting snapshot to secondary locations, if defined.",
+        ),
+    ] = False,
+    locations_override: typing.Annotated[
+        typing.Optional[list[str]],
+        typer.Option(
+            "--location",
+            "-l",
+            help="Manually specify backup location(s). You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile. Implies the '--no-copy' option.",
+        ),
+    ] = None,
 ):
     config = ctx.obj.config
     dry_run = ctx.obj.dry_run
@@ -206,9 +220,12 @@ def app_run(
 )
 def app_execute(
     ctx: BackupCLIContext,
-    location_name: str = typer.Argument(
-        ..., help="Name of the backup location to use when executing restic."
-    ),
+    location_name: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Name of the backup location to use when executing restic."
+        ),
+    ],
 ):
     config = ctx.obj.config
 
@@ -236,9 +253,9 @@ def app_execute(
 )
 def app_command(
     ctx: BackupCLIContext,
-    location_name: str = typer.Argument(
-        ..., help="Name of the backup location."
-    ),
+    location_name: typing.Annotated[
+        str, typer.Argument(help="Name of the backup location.")
+    ],
 ):
     config = ctx.obj.config
     location = helper.get_location(config, location_name)
@@ -267,17 +284,23 @@ def app_command(
 )
 def app_snapshots(
     ctx: BackupCLIContext,
-    profile_name: str = typer.Argument(
-        ...,
-        help="Name of the backup profile. Executes on the first location defined in the backup profile.",
-    ),
-    json: bool = typer.Option(False, "--json/", help="Enable JSON output."),
-    location_override: typing.Optional[str] = typer.Option(
-        None,
-        "--location",
-        "-l",
-        help="Manually specify a backup location. Location does not have to be defined as a part of the backup profile.",
-    ),
+    profile_name: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Name of the backup profile. Executes on the first location defined in the backup profile.",
+        ),
+    ],
+    json: typing.Annotated[
+        bool, typer.Option("--json/", help="Enable JSON output.")
+    ] = False,
+    location_override: typing.Annotated[
+        typing.Optional[str],
+        typer.Option(
+            "--location",
+            "-l",
+            help="Manually specify a backup location. Location does not have to be defined as a part of the backup profile.",
+        ),
+    ] = None,
 ):
     config = ctx.obj.config
     profile = helper.get_profile(config, profile_name)
@@ -309,21 +332,25 @@ def app_snapshots(
 )
 def app_apply(
     ctx: BackupCLIContext,
-    profile_name: str = typer.Argument(
-        ..., help="Name of the backup profile."
-    ),
-    prune: bool = typer.Option(
-        False,
-        "--prune/",
-        "-p/",
-        help="After forgetting the snapshots, prune the storage location to clean up unused data. Generally a time consuming process.",
-    ),
-    locations_override: typing.Optional[list[str]] = typer.Option(
-        None,
-        "--location",
-        "-l",
-        help="Manually specify a backup location to apply retention policy to. You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile.",
-    ),
+    profile_name: typing.Annotated[
+        str, typer.Argument(help="Name of the backup profile.")
+    ],
+    prune: typing.Annotated[
+        bool,
+        typer.Option(
+            "--prune/",
+            "-p/",
+            help="After forgetting the snapshots, prune the storage location to clean up unused data. Generally a time consuming process.",
+        ),
+    ] = False,
+    locations_override: typing.Annotated[
+        typing.Optional[list[str]],
+        typer.Option(
+            "--location",
+            "-l",
+            help="Manually specify a backup location to apply retention policy to. You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile.",
+        ),
+    ] = None,
 ):
     config = ctx.obj.config
     dry_run = ctx.obj.dry_run
@@ -366,9 +393,12 @@ def app_apply(
 )
 def app_prune(
     ctx: BackupCLIContext,
-    location_name: str = typer.Argument(
-        ..., help="Name of the backup location to use when executing restic."
-    ),
+    location_name: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Name of the backup location to use when executing restic."
+        ),
+    ],
 ):
     config = ctx.obj.config
 
@@ -391,34 +421,43 @@ def app_prune(
 )
 def app_archive(  # noqa: C901
     ctx: BackupCLIContext,
-    destination: pathlib.Path = typer.Argument(
-        ..., help="Destination directory for the archive file."
-    ),
-    profile_name: str = typer.Argument(
-        ..., help="Name of the backup profile."
-    ),
-    location_override: typing.Optional[str] = typer.Option(
-        None,
-        "--location",
-        "-l",
-        help="Name of location to query for the snapshot. Defaults to the primary location defined in the backup profile.",
-    ),
-    snapshots: list[str] = typer.Argument(
-        ...,
-        help="List of snapshot ID's to archive. 'latest' is valid and refers to the latest snapshot.",
-    ),
-    encrypt: bool = typer.Option(
-        False,
-        "--encrypt/",
-        "-e/",
-        help="Encrypt the archive using AES-256 encryption. Encrypted archives will have their extension changed to '.aes'. Make sure to specify a password file either with '--password' or in the configuration file.",
-    ),
-    password: typing.Optional[pathlib.Path] = typer.Option(
-        None,
-        "--password",
-        "-p",
-        help="Specify path to a file containing the password for archive encryption purposes.",
-    ),
+    destination: typing.Annotated[
+        pathlib.Path,
+        typer.Argument(help="Destination directory for the archive file."),
+    ],
+    profile_name: typing.Annotated[
+        str, typer.Argument(help="Name of the backup profile.")
+    ],
+    snapshots: typing.Annotated[
+        list[str],
+        typer.Argument(
+            help="List of snapshot ID's to archive. 'latest' is valid and refers to the latest snapshot.",
+        ),
+    ],
+    location_override: typing.Annotated[
+        typing.Optional[str],
+        typer.Option(
+            "--location",
+            "-l",
+            help="Name of location to query for the snapshot. Defaults to the primary location defined in the backup profile.",
+        ),
+    ] = None,
+    encrypt: typing.Annotated[
+        bool,
+        typer.Option(
+            "--encrypt/",
+            "-e/",
+            help="Encrypt the archive using AES-256 encryption. Encrypted archives will have their extension changed to '.aes'. Make sure to specify a password file either with '--password' or in the configuration file.",
+        ),
+    ] = False,
+    password: typing.Annotated[
+        typing.Optional[pathlib.Path],
+        typer.Option(
+            "--password",
+            "-p",
+            help="Specify path to a file containing the password for archive encryption purposes.",
+        ),
+    ] = None,
 ):
     # Must have all the required commands available to use
     if not command.openssl or not command.pv or not command.zstd:
@@ -647,16 +686,20 @@ def app_archive(  # noqa: C901
 )
 def app_decrypt(
     ctx: BackupCLIContext,
-    stream_input: typer.FileBinaryRead = typer.Argument(..., metavar="INPUT"),
-    stream_output: typer.FileBinaryWrite = typer.Argument(
-        ..., metavar="OUTPUT"
-    ),
-    password: typing.Optional[pathlib.Path] = typer.Option(
-        None,
-        "--password",
-        "-p",
-        help="Specify path to a file containing the password for archive decryption.",
-    ),
+    stream_input: typing.Annotated[
+        typer.FileBinaryRead, typer.Argument(metavar="INPUT")
+    ],
+    stream_output: typing.Annotated[
+        typer.FileBinaryWrite, typer.Argument(metavar="OUTPUT")
+    ],
+    password: typing.Annotated[
+        typing.Optional[pathlib.Path],
+        typer.Option(
+            "--password",
+            "-p",
+            help="Specify path to a file containing the password for archive decryption.",
+        ),
+    ] = None,
 ):
     # Must have all the required commands available to use
     if not command.openssl or not command.pv or not command.zstd:
@@ -746,17 +789,25 @@ def app_list(ctx: BackupCLIContext):
 @app.command(name="copy", help="Copy a snapshot from one location to another.")
 def app_copy(
     ctx: BackupCLIContext,
-    source: str = typer.Argument(
-        ..., help="Source location; where the snapshot will be copied FROM."
-    ),
-    destination: str = typer.Argument(
-        ..., help="Destination location; where the snapshot will be copied TO."
-    ),
-    snapshots: list[str] = typer.Argument(
-        ...,
-        min=1,
-        help="IDs of one or more snapshots to copy from the source to the destination.",
-    ),
+    source: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Source location; where the snapshot will be copied FROM."
+        ),
+    ],
+    destination: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Destination location; where the snapshot will be copied TO."
+        ),
+    ],
+    snapshots: typing.Annotated[
+        list[str],
+        typer.Argument(
+            min=1,
+            help="IDs of one or more snapshots to copy from the source to the destination.",
+        ),
+    ],
 ):
     config = ctx.obj.config
 
@@ -785,18 +836,24 @@ def app_copy(
 )
 def app_mount(
     ctx: BackupCLIContext,
-    profile_name: str = typer.Argument(
-        ..., metavar="PROFILE", help="Name of the backup profile to use."
-    ),
-    mount_point: pathlib.Path = typer.Argument(
-        ..., metavar="MOUNT", help="Filesystem mount point."
-    ),
-    location_name: typing.Optional[str] = typer.Option(
-        None,
-        "--location",
-        "-l",
-        help="Name of backup location to mount. Defaults to the primary backup location defined in the backup policy.",
-    ),
+    profile_name: typing.Annotated[
+        str,
+        typer.Argument(
+            metavar="PROFILE", help="Name of the backup profile to use."
+        ),
+    ],
+    mount_point: typing.Annotated[
+        pathlib.Path,
+        typer.Argument(metavar="MOUNT", help="Filesystem mount point."),
+    ],
+    location_name: typing.Annotated[
+        typing.Optional[str],
+        typer.Option(
+            "--location",
+            "-l",
+            help="Name of backup location to mount. Defaults to the primary backup location defined in the backup policy.",
+        ),
+    ] = None,
 ):
     config = ctx.obj.config
 
