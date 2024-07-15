@@ -197,7 +197,7 @@ def get_execution_env(
     location = get_location(config, location_name)
 
     # If "clean_env" property is used, we will start with a clean environment
-    if location.clean_env:
+    if location.clean_env is not None:
         return location.clean_env
 
     # Else, we will augment the execution environment with the "env" property (if defined)
