@@ -212,6 +212,63 @@ def app_run(
 
 
 @app.command(
+    name="init",
+    help="""
+        Initialize a new backup location preparing it for operation. Optionally,
+        you may choose to inherit the restic chunker settings from an existing
+        backup location. This ensures that (among other things) the
+        de-duplication parameters are compatible and allows copying snapshots
+        between the two.
+    """,
+)
+def app_init_location(
+    ctx: BackupCLIContext,
+    location_name: typing.Annotated[
+        str,
+        typer.Argument(
+            metavar="NAME", help="Name of the backup location to initialize."
+        ),
+    ],
+    parent_location_name: typing.Annotated[
+        typing.Optional[str],
+        typer.Option(
+            "--parent",
+            "-p",
+            help="Name of the existing (i.e. previously initialized) backup location to inherit chunker settings from.",
+        ),
+    ] = None,
+):
+    config = ctx.obj.config
+    location_env = helper.get_execution_env(config, location_name)
+
+    # Begin assembling arguments for the new backup location
+    args: list[str] = [
+        *helper.get_location_arguments(config, location_name),
+        *ctx.args,
+        "init",
+    ]
+
+    # If the parent location is provided, we need to validate that the operation
+    # is possible and then insert the "from" args
+    if parent_location_name:
+        helper.validate_two_repo_operation(
+            config, location_name, parent_location_name
+        )
+        location_env.update(
+            helper.get_execution_env(config, parent_location_name)
+        )
+        args += helper.get_location_arguments(
+            config, parent_location_name, from_repo=True
+        )
+        args.append("--copy-chunker-params")
+
+    # Execute the restic command
+    command.restic(
+        args, _env=location_env, _fg=True, _ok_code=helper.foreground_ok_codes
+    )
+
+
+@app.command(
     name="execute",
     context_settings={
         "allow_extra_args": True,
