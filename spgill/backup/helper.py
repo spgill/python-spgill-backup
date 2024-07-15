@@ -16,6 +16,10 @@ import yaml
 from . import model
 
 
+foreground_ok_codes: list[int] = [0, 1, 2, 3, 10, 11, 130]
+"""List of expected restic error codes that can be safely ignore if running in `_fg` mode."""
+
+
 def fix_timestamp(t: str) -> str:
     return re.sub(
         r":(\d+)\.(\d+)",

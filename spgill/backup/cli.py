@@ -243,6 +243,7 @@ def app_execute(
             args,
             _env=helper.get_execution_env(config, location_name),
             _fg=True,
+            _ok_code=helper.foreground_ok_codes,
         )
     except sh.ErrorReturnCode as err:
         # Catch error codes and pass them through this tool's exit
@@ -324,7 +325,10 @@ def app_snapshots(
 
     # Execute the command
     command.restic(
-        args, _env=helper.get_execution_env(config, location_name), _fg=True
+        args,
+        _env=helper.get_execution_env(config, location_name),
+        _fg=True,
+        _ok_code=helper.foreground_ok_codes,
     )
 
 
@@ -828,7 +832,12 @@ def app_copy(
     destination_env = helper.get_execution_env(config, destination)
 
     # Execute the restic command
-    command.restic(args, _env={**source_env, **destination_env}, _fg=True)
+    command.restic(
+        args,
+        _env={**source_env, **destination_env},
+        _fg=True,
+        _ok_code=helper.foreground_ok_codes,
+    )
 
 
 @app.command(
@@ -885,7 +894,9 @@ def app_mount(
 
     helper.print_line("Mounting...")
 
-    command.restic(*args, _env=location_env, _fg=True)
+    command.restic(
+        *args, _env=location_env, _fg=True, _ok_code=helper.foreground_ok_codes
+    )
 
 
 # region Daemon implementation
