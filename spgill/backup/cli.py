@@ -780,68 +780,6 @@ def cli_copy(
 
 
 @cli.command(
-    name="daemon", help="Run in daemon mode and execute backups on a schedule."
-)
-def cli_daemon(
-    ctx: BackupCLIContext,
-):
-    config = ctx.obj.config
-
-    helper.print_line("Scheduling jobs for applicable profiles...")
-    scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
-        executors={
-            "default": apscheduler.executors.pool.ThreadPoolExecutor(1)
-        },
-        job_defaults={
-            "misfire_grace_time": None,
-            "coalesce": True,
-            "max_instances": 1
-        },
-    )
-    jobs_added = False
-
-    # Iterate through every defined profile
-    for profile_name, profile in config.profiles.items():
-        policy = (
-            helper.get_policy(config, profile.policy)
-            if profile.policy
-            else None
-        )
-        if policy and policy.schedule:
-            helper.print_nested_line(f"{profile_name}: {policy.schedule}")
-            trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
-                policy.schedule
-            )
-
-            scheduler.add_job(
-                id=profile_name,
-                trigger=trigger,
-                func=cli_run,
-                args=[ctx],
-                kwargs={
-                    "name": profile_name,
-                    "groups": [],
-                    "no_copy": False,
-                    "locations_override": None,
-                },
-            )
-            jobs_added = True
-
-    if not jobs_added:
-        helper.print_warning(
-            "No jobs scheduled. Check your configuration and try again. Exiting..."
-        )
-        exit()
-
-    try:
-        helper.print_warning("Starting scheduler...")
-        scheduler.start()
-    except KeyboardInterrupt:
-        helper.print_warning("Scheduler stopping...")
-        exit()
-
-
-@cli.command(
     name="mount",
     help="Mount to the filesystem all snapshots belonging to a backup profile.",
 )
@@ -890,3 +828,78 @@ def cli_mount(
     helper.print_line("Mounting...")
 
     command.restic(*args, _env=location_env, _fg=True)
+
+
+# region Daemon implementation
+@cli.command(
+    name="daemon",
+    help="""
+        Run the backup orchestrator daemon (service) in blocking mode.
+        Will execute backup profiles according to their policy schedule.
+    """,
+)
+def cli_daemon(
+    ctx: BackupCLIContext,
+):
+    """
+    This command implements the scheduling logic for the backup orchestrator
+    daemon (service). This essentially schedules exclusive workers to proxy
+    the backup execution to the existing "run" command.
+    """
+    config = ctx.obj.config
+
+    helper.print_line("Scheduling jobs for applicable profiles...")
+    scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
+        executors={
+            "default": apscheduler.executors.pool.ThreadPoolExecutor(1)
+        },
+        job_defaults={
+            "misfire_grace_time": None,
+            "coalesce": True,
+            "max_instances": 1,
+        },
+    )
+    jobs_added = False
+
+    # Iterate through every defined profile
+    for profile_name, profile in config.profiles.items():
+        policy = (
+            helper.get_policy(config, profile.policy)
+            if profile.policy
+            else None
+        )
+        if policy and policy.schedule:
+            helper.print_nested_line(f"{profile_name}: {policy.schedule}")
+            trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
+                policy.schedule
+            )
+
+            scheduler.add_job(
+                id=profile_name,
+                trigger=trigger,
+                func=cli_run,
+                args=[ctx],
+                kwargs={
+                    "name": profile_name,
+                    "groups": [],
+                    "no_copy": False,
+                    "locations_override": None,
+                },
+            )
+            jobs_added = True
+
+    if not jobs_added:
+        helper.print_warning(
+            "No jobs scheduled. Check your configuration and try again. Exiting..."
+        )
+        exit()
+
+    try:
+        helper.print_warning("Starting scheduler...")
+        scheduler.start()
+    except KeyboardInterrupt:
+        helper.print_warning("Scheduler stopping...")
+        exit()
+
+
+# endregion
