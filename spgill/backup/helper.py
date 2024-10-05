@@ -345,7 +345,7 @@ def get_retention_arguments(
         args += ["--keep-monthly", retention.keep_monthly]
 
     if retention.keep_yearly:
-        args += ["--keep-yearly", retention.keep_hourly]
+        args += ["--keep-yearly", retention.keep_yearly]
 
     return args
 
