@@ -1040,7 +1040,7 @@ def app_daemon(
             )
 
             scheduler.add_job(
-                id=profile_name,
+                id=f"run:{profile_name}",
                 trigger=trigger,
                 func=app_run,
                 args=[ctx],
@@ -1059,6 +1059,32 @@ def app_daemon(
             "No jobs scheduled. Check your configuration and try again. Exiting..."
         )
         exit()
+
+    # Schedule the prune jobs if a schedule is specified in the config file
+    if config.daemon and config.daemon.prune_schedule:
+        prune_sched = config.daemon.prune_schedule
+        helper.print_line(
+            f"Scheduling prune jobs for each used location ([blue]{prune_sched}[/]):"
+        )
+
+        # Collate a complete list of locations being used by scheduled jobs
+        distinct_locations: set[str] = set()
+        for profile in config.profiles.values():
+            if profile.policy:
+                policy = helper.get_policy(config, profile.policy)
+                for location_name in helper.get_policy_locations(policy):
+                    distinct_locations.add(location_name)
+
+        # Schedule a task for each backup location (they will executed 1 at a time)
+        for location_name in distinct_locations:
+            helper.print_nested_line(location_name)
+            scheduler.add_job(
+                id=f"prune:{location_name}",
+                trigger=trigger,
+                func=app_prune,
+                args=[ctx],
+                kwargs={"location_name": location_name},
+            )
 
     try:
         helper.print_warning("Starting scheduler...")
