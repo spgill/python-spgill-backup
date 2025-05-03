@@ -62,10 +62,6 @@ class ArchiveConfiguration(pydantic.BaseModel):
     password_file: str
 
 
-class DaemonConfiguration(pydantic.BaseModel):
-    prune_schedule: typing.Optional[str] = None
-
-
 class RootBackupConfiguration(pydantic.BaseModel):
     locations: dict[str, BackupLocation]
     policies: dict[str, BackupPolicy]
@@ -73,6 +69,5 @@ class RootBackupConfiguration(pydantic.BaseModel):
 
     global_profile: typing.Optional[BackupProfile] = None
     archive: typing.Optional[ArchiveConfiguration] = None
-    daemon: typing.Optional[DaemonConfiguration] = None
     cache: typing.Optional[str] = None
     v: typing.Optional[int] = None

@@ -997,6 +997,15 @@ def app_daemon(
             help="Apply retention policy to all backups when they are run.",
         ),
     ] = False,
+    prune_schedule: typing.Annotated[
+        typing.Optional[str],
+        typer.Option(
+            "--prune-schedule",
+            "-p",
+            envvar="SPGILL_BACKUP_PRUNE_SCHED",
+            help="Optional cron schedule to prune backup locations.",
+        ),
+    ] = None,
 ):
     """
     This command implements the scheduling logic for the backup orchestrator
@@ -1061,10 +1070,12 @@ def app_daemon(
         exit()
 
     # Schedule the prune jobs if a schedule is specified in the config file
-    if config.daemon and config.daemon.prune_schedule:
-        prune_sched = config.daemon.prune_schedule
+    if prune_schedule:
         helper.print_line(
-            f"Scheduling prune jobs for each used location ([blue]{prune_sched}[/]):"
+            f"Scheduling prune jobs for each used location ([blue]{prune_schedule}[/]):"
+        )
+        prune_trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
+            prune_schedule
         )
 
         # Collate a complete list of locations being used by scheduled jobs
@@ -1078,9 +1089,10 @@ def app_daemon(
         # Schedule a task for each backup location (they will executed 1 at a time)
         for location_name in distinct_locations:
             helper.print_nested_line(location_name)
+
             scheduler.add_job(
                 id=f"prune:{location_name}",
-                trigger=trigger,
+                trigger=prune_trigger,
                 func=app_prune,
                 args=[ctx],
                 kwargs={"location_name": location_name},
