@@ -36,6 +36,7 @@ class BackupProfile(pydantic.BaseModel):
     archive_name: typing.Optional[str] = None
     tags: list[str] = []
     args: list[str] = []
+    auto_apply: typing.Optional[bool] = False
 
     ### Include/exclude fields ###
 

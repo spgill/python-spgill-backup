@@ -70,9 +70,9 @@ def app_main(
 ):
     # Load the config options and insert it into the context object
     ctx.obj = BackupContextObject(
-        config=app_config.load_config_values(config),
-        verbose=verbose,
-        dry_run=dry_run,
+        app_config.load_config_values(config),
+        verbose,
+        dry_run,
     )
 
     # Print warning message if this is a dry run
@@ -112,6 +112,14 @@ def app_run(
             help="Manually specify backup location(s). You can specify this option multiple times. Locations do not have to be defined as a part of the backup profile. Implies the '--no-copy' option.",
         ),
     ] = None,
+    apply_retention: typing.Annotated[
+        bool,
+        typer.Option(
+            "--apply/",
+            "-a/",
+            help="When snapshot is complete, apply the retention policy to the primary location and any secondary locations. This will NOT prune the locations and will have to be done manually.",
+        ),
+    ] = False,
 ):
     config = ctx.obj.config
     dry_run = ctx.obj.dry_run
@@ -128,7 +136,7 @@ def app_run(
         no_copy = True
 
     # Get the repo's data
-    helper.print_line(f"Starting at {datetime.datetime.now()}")
+    helper.print_line(f"Starting run at {datetime.datetime.now()}")
     helper.print_line(f"Chosen profile: {name}")
     helper.print_line(f"Primary location: {primary_location_name}")
     if len(locations) > 1:
@@ -208,7 +216,21 @@ def app_run(
                 {**primary_location_env, **copy_dest_env},
             )
 
-    helper.print_line(f"Finished at {datetime.datetime.now()}")
+    # If command is run with apply flag or the profile has the auto_apply flag,
+    # then we will immediately apply the retention policy
+    if apply_retention or profile.auto_apply:
+        helper.print_line("Applying retention policy after backup...")
+        if no_copy:
+            app_apply(
+                ctx,
+                profile_name=name,
+                prune=False,
+                locations_override=[primary_location_name],
+            )
+        else:
+            app_apply(ctx, profile_name=name, prune=False)
+
+    helper.print_line(f"Finished run at {datetime.datetime.now()}")
 
 
 @app.command(
@@ -966,6 +988,15 @@ def app_mount(
 )
 def app_daemon(
     ctx: BackupCLIContext,
+    apply_retention: typing.Annotated[
+        bool,
+        typer.Option(
+            "--apply/",
+            "-a/",
+            envvar="SPGILL_BACKUP_AUTO_APPLY",
+            help="Apply retention policy to all backups when they are run.",
+        ),
+    ] = False,
 ):
     """
     This command implements the scheduling logic for the backup orchestrator
@@ -1010,6 +1041,7 @@ def app_daemon(
                     "groups": [],
                     "no_copy": False,
                     "locations_override": None,
+                    "apply_retention": apply_retention,
                 },
             )
             jobs_added = True
