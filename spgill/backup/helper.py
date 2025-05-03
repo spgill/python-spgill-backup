@@ -9,6 +9,7 @@ import typing
 import humanize
 import mergedeep
 import rich
+import rich.console
 import sh
 import yaml
 
@@ -28,12 +29,19 @@ def fix_timestamp(t: str) -> str:
     )
 
 
-def print(*args, file=sys.stdout):
-    rich.print(*args, file=file)
+console = rich.console.Console(highlight=False)
+error_console = rich.console.Console(highlight=False, stderr=True)
 
 
-def print_line(*args, file=sys.stdout):
-    print("-" * 8, *args, file=file)
+def print(*args, stderr=False):
+    if stderr:
+        error_console.print(*args)
+    else:
+        console.print(*args)
+
+
+def print_line(*args, stderr=False):
+    print("-" * 8, *args, stderr=stderr)
 
 
 def print_nested_line(*args):
@@ -41,11 +49,11 @@ def print_nested_line(*args):
 
 
 def print_warning(message: str):
-    print_line(f"[yellow]{message}", file=sys.stderr)
+    print_line(f"[yellow]{message}", stderr=True)
 
 
 def print_error(message: str):
-    print("-" * 8, f"[red]{message}", file=sys.stderr)
+    print("-" * 8, f"[red]{message}", stderr=True)
     exit(1)
 
 
