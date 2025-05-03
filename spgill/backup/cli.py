@@ -1006,6 +1006,9 @@ def app_daemon(
     config = ctx.obj.config
 
     helper.print_line("Scheduling jobs for applicable profiles...")
+    helper.print_line(
+        "([green]a[/]) = retention policy will be applied after successful backup"
+    )
     scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
         executors={
             "default": apscheduler.executors.pool.ThreadPoolExecutor(1)
@@ -1026,7 +1029,12 @@ def app_daemon(
             else None
         )
         if policy and policy.schedule:
-            helper.print_nested_line(f"{profile_name}: {policy.schedule}")
+            profile_line = f"{profile_name}:"
+            if apply_retention or profile.auto_apply:
+                profile_line += " ([green]a[/])"
+            profile_line += f" [blue]{policy.schedule}[/]"
+            helper.print_nested_line(profile_line)
+
             trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
                 policy.schedule
             )
