@@ -2,8 +2,8 @@ FROM python:3.11-alpine
 SHELL ["/bin/sh", "-c"]
 
 # Install the backup package
-COPY . /tmp
-RUN pip install /tmp && rm -rf /tmp
+COPY . /tmp/spgill-backup-src
+RUN pip install /tmp/spgill-backup-src && rm -rf /tmp/spgill-backup-src
 
 # Install tools from apk
 RUN apk add --no-cache wget bzip2 tini
