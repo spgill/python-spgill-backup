@@ -14,7 +14,7 @@ import sh
 import yaml
 
 # Local imports
-from . import model
+from . import schema
 
 
 foreground_ok_codes: list[int] = [0, 1, 2, 3, 10, 11, 130]
@@ -71,8 +71,8 @@ def human_readable(num):
 
 
 def get_location(
-    config: model.RootBackupConfiguration, name: str
-) -> model.BackupLocation:
+    config: schema.RootBackupConfiguration, name: str
+) -> schema.BackupLocation:
     if not (location := config.locations.get(name, None)):
         print_error(f"Error: No backup location found by name '{name}'")
 
@@ -81,8 +81,8 @@ def get_location(
 
 
 def merge_with_global_profile(
-    config: model.RootBackupConfiguration, profile: model.BackupProfile
-) -> model.BackupProfile:
+    config: schema.RootBackupConfiguration, profile: schema.BackupProfile
+) -> schema.BackupProfile:
     """This function returns the given profile with the global profile defaults applied."""
     # Serialize the global profile and selected profile to dictionaries
     global_dict = (
@@ -98,12 +98,12 @@ def merge_with_global_profile(
     )
 
     # Return a new backup profile representing the merger
-    return model.BackupProfile(**merged_dict)
+    return schema.BackupProfile(**merged_dict)
 
 
 def get_profile(
-    config: model.RootBackupConfiguration, name: str
-) -> model.BackupProfile:
+    config: schema.RootBackupConfiguration, name: str
+) -> schema.BackupProfile:
     if not (profile := config.profiles.get(name, None)):
         print_error(f"Error: No backup profile found by name '{name}'")
 
@@ -117,8 +117,8 @@ def get_profile(
 
 
 def get_policy(
-    config: model.RootBackupConfiguration, name: str
-) -> model.BackupPolicy:
+    config: schema.RootBackupConfiguration, name: str
+) -> schema.BackupPolicy:
     if not (policy := config.policies.get(name, None)):
         print_error(f"Error: No backup policy found by name '{name}'")
 
@@ -131,7 +131,7 @@ def get_policy(
     return policy
 
 
-def get_policy_locations(policy: model.BackupPolicy) -> list[str]:
+def get_policy_locations(policy: schema.BackupPolicy) -> list[str]:
     assert policy.location is not None
     if isinstance(policy.location, str):
         return [policy.location]
@@ -150,7 +150,7 @@ location_option_names = {
 
 
 def get_location_arguments(
-    config: model.RootBackupConfiguration,
+    config: schema.RootBackupConfiguration,
     location_name: str,
     from_repo: bool = False,
 ) -> list[str]:
@@ -193,7 +193,7 @@ def get_location_arguments(
 
 
 def get_tag_arguments(
-    config: model.RootBackupConfiguration,
+    config: schema.RootBackupConfiguration,
     profile_name: str,
 ) -> list[str]:
     profile = get_profile(config, profile_name)
@@ -203,7 +203,7 @@ def get_tag_arguments(
 
 
 def get_execution_env(
-    config: model.RootBackupConfiguration,
+    config: schema.RootBackupConfiguration,
     location_name: str,
 ) -> dict[str, str]:
     location = get_location(config, location_name)
@@ -213,7 +213,7 @@ def get_execution_env(
 
 
 def validate_two_repo_operation(
-    config: model.RootBackupConfiguration,
+    config: schema.RootBackupConfiguration,
     location_a_name: str,
     location_b_name: str,
 ) -> None:
@@ -249,7 +249,7 @@ def fully_qualified_path(
 
 
 def get_inclusion_arguments(
-    config: model.RootBackupConfiguration,
+    config: schema.RootBackupConfiguration,
     profile_name: str,
     group_names: list[str],
 ) -> typing.Generator[str, None, None]:
@@ -311,15 +311,15 @@ def get_inclusion_arguments(
         yield entry
 
 
-def get_hostname_arguments(profile: model.BackupProfile) -> list[str]:
+def get_hostname_arguments(profile: schema.BackupProfile) -> list[str]:
     if profile.hostname:
         return ["--host", profile.hostname]
     return []
 
 
 def get_retention_arguments(
-    config: model.RootBackupConfiguration,
-    policy: model.BackupPolicy,
+    config: schema.RootBackupConfiguration,
+    policy: schema.BackupPolicy,
 ) -> list[str]:
     # If there are no retention args, return empty list
     if not policy.retention:

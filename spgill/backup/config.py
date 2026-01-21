@@ -5,7 +5,7 @@ import pathlib
 import yaml
 
 # Local imports
-from . import helper, model
+from . import helper, schema
 
 CURRENT_CONFIG_VERSION = 4
 
@@ -34,7 +34,7 @@ profiles: {{}}
 # Return the config values in the config file
 def load_config_values(
     config_path: pathlib.Path,
-) -> model.RootBackupConfiguration:
+) -> schema.RootBackupConfiguration:
     # Resolve the path string to a path object
     config_path = config_path.expanduser()
 
@@ -46,7 +46,7 @@ def load_config_values(
     # Open and decode the config file
     with config_path.open("r") as handle:
         parsed = yaml.load(handle, yaml.SafeLoader)
-        instance = model.RootBackupConfiguration(**parsed)
+        instance = schema.RootBackupConfiguration(**parsed)
         assert not isinstance(instance, list)
 
         if instance.v is not None and instance.v < CURRENT_CONFIG_VERSION:

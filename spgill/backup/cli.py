@@ -17,12 +17,12 @@ import apscheduler.triggers.cron
 import sh
 
 # Local imports
-from . import helper, command, config as app_config, model
+from . import helper, command, config as app_config, schema
 
 
 @dataclasses.dataclass
 class BackupContextObject:
-    config: model.RootBackupConfiguration
+    config: schema.RootBackupConfiguration
     verbose: bool
     dry_run: bool
 
