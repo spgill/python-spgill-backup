@@ -14,6 +14,7 @@ import typing
 import apscheduler.executors.pool
 import apscheduler.schedulers.blocking
 import apscheduler.triggers.cron
+import rich.text
 import sh
 
 # Local imports
@@ -85,7 +86,7 @@ def app_main(
 @app.command(name="run", help="Execute a backup profile now.")
 def app_run(
     ctx: BackupCLIContext,
-    name: typing.Annotated[
+    profile_name: typing.Annotated[
         str, typer.Argument(help="Name of the backup profile to use.")
     ],
     groups: typing.Annotated[
@@ -124,7 +125,7 @@ def app_run(
     config = ctx.obj.config
     dry_run = ctx.obj.dry_run
 
-    profile = helper.get_profile(config, name)
+    profile = helper.get_profile(config, profile_name)
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
 
@@ -137,7 +138,9 @@ def app_run(
 
     # Get the repo's data
     helper.print_line(f"Starting run at {datetime.datetime.now()}")
-    helper.print_line(f"Chosen profile: {name}")
+    helper.print_line(
+        "Chosen profile:", helper.rich_profile_insert(config, profile_name)
+    )
     helper.print_line(f"Primary location: {primary_location_name}")
     if len(locations) > 1:
         helper.print_line("Secondary locations:", ", ".join(locations[1:]))
@@ -147,8 +150,8 @@ def app_run(
         *helper.get_location_arguments(config, primary_location_name),
         "backup",
         *helper.get_hostname_arguments(profile),
-        *helper.get_tag_arguments(config, name),
-        *helper.get_inclusion_arguments(config, name, groups),
+        *helper.get_profile_identifier_with_tags_arg(config, profile_name),
+        *helper.get_inclusion_arguments(config, profile_name, groups),
         *(profile.args or []),
     ]
 
@@ -223,12 +226,12 @@ def app_run(
         if no_copy:
             app_apply(
                 ctx,
-                profile_name=name,
+                profile_name=profile_name,
                 prune=False,
                 locations_override=[primary_location_name],
             )
         else:
-            app_apply(ctx, profile_name=name, prune=False)
+            app_apply(ctx, profile_name=profile_name, prune=False)
 
     helper.print_line(f"Finished run at {datetime.datetime.now()}")
 
@@ -395,7 +398,7 @@ def app_snapshots(
     args = [
         *helper.get_location_arguments(config, location_name),
         "snapshots",
-        *helper.get_tag_arguments(config, profile_name),
+        *helper.get_profile_identifier_arg(config, profile_name),
     ]
 
     # Enable JSON output if indicated
@@ -454,7 +457,7 @@ def app_apply(
             # We need to disable grouping or else adding paths/tags/etc. will mess up the policy
             "--group-by",
             "",
-            *helper.get_tag_arguments(config, profile_name),
+            *helper.get_profile_identifier_arg(config, profile_name),
             *helper.get_retention_arguments(config, policy),
         ]
 
@@ -601,7 +604,9 @@ def app_archive(  # noqa: C901
         snapshots = ["latest"]
 
     # Print some startup information
-    helper.print_line("Selected profile:", profile_name)
+    helper.print_line(
+        "Selected profile:", helper.rich_profile_insert(config, profile_name)
+    )
     helper.print_line("location name:", location_name)
     helper.print_line("Selected snapshots:", ", ".join(snapshots))
 
@@ -860,13 +865,9 @@ def app_list(ctx: BackupCLIContext):
     helper.print()
 
     # Profiles
-    profiles = config.profiles
     helper.print_line("Profiles:")
-    for profile_name in [
-        "[red]global_profile",
-        *profiles.keys(),
-    ]:
-        helper.print(f"  - {profile_name}")
+    for profile_name in config.profiles:
+        helper.print("  -", helper.rich_profile_insert(config, profile_name))
 
     helper.print()
 
@@ -952,7 +953,9 @@ def app_mount(
         exit(1)
 
     profile = helper.get_profile(config, profile_name)
-    helper.print_line(f"Backup profile: {profile_name}")
+    helper.print_line(
+        "Backup profile:", helper.rich_profile_insert(config, profile_name)
+    )
 
     assert profile.policy
     policy = helper.get_policy(config, profile.policy)
@@ -967,7 +970,7 @@ def app_mount(
     args = [
         *helper.get_location_arguments(config, location_name),
         "mount",
-        *helper.get_tag_arguments(config, profile_name),
+        *helper.get_profile_identifier_arg(config, profile_name),
         str(mount_point),
     ]
 
@@ -976,6 +979,49 @@ def app_mount(
     command.restic(
         *args, _env=location_env, _fg=True, _ok_code=helper.foreground_ok_codes
     )
+
+
+@app.command(
+    name="migrate_ids",
+    help="Migrate snapshots from config v4 to v5 by integrating unique profile IDs",
+)
+def app_migrate_ids(
+    ctx: BackupCLIContext,
+    location_name: typing.Annotated[
+        str,
+        typer.Argument(
+            help="Name of the backup location to use when executing restic."
+        ),
+    ],
+):
+    config = ctx.obj.config
+
+    helper.print_line(f"Selected location: {location_name}")
+
+    # Iterate through each profile and perform the migration
+    for profile_name, profile in config.profiles.items():
+        helper.print_nested_line(
+            "Applying migration for profile:",
+            helper.rich_profile_insert(config, profile_name),
+        )
+
+        # Assemble arguments and execute
+        helper.run_command_politely(
+            command.restic,
+            [
+                *helper.get_location_arguments(config, location_name),
+                "tag",
+                *helper.get_deprecated_tag_arguments(config, profile_name),
+                "--set",
+                ",".join(
+                    [
+                        helper.get_profile_identifier(config, profile_name),
+                        *(profile.tags or []),
+                    ]
+                ),
+            ],
+            helper.get_execution_env(config, location_name),
+        )
 
 
 # region Daemon implementation
@@ -1016,7 +1062,7 @@ def app_daemon(
 
     helper.print_line("Scheduling jobs for applicable profiles...")
     helper.print_line(
-        "([green]a[/]) = retention policy will be applied after successful backup"
+        "🟢 = retention policy will be applied after successful backup"
     )
     scheduler = apscheduler.schedulers.blocking.BlockingScheduler(
         executors={
@@ -1038,11 +1084,13 @@ def app_daemon(
             else None
         )
         if policy and policy.schedule:
-            profile_line = f"{profile_name}:"
-            if apply_retention or profile.auto_apply:
-                profile_line += " ([green]a[/])"
-            profile_line += f" [blue]{policy.schedule}[/]"
-            helper.print_nested_line(profile_line)
+            helper.print_nested_line(
+                rich.text.Text.assemble(
+                    "🟢 " if (apply_retention or profile.auto_apply) else "",
+                    helper.rich_profile_insert(config, profile_name),
+                    f": {policy.schedule}",
+                )
+            )
 
             trigger = apscheduler.triggers.cron.CronTrigger.from_crontab(
                 policy.schedule
@@ -1054,7 +1102,7 @@ def app_daemon(
                 func=app_run,
                 args=[ctx],
                 kwargs={
-                    "name": profile_name,
+                    "profile_name": profile_name,
                     "groups": [],
                     "no_copy": False,
                     "locations_override": None,

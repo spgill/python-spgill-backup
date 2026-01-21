@@ -1,4 +1,5 @@
 # Stdlib imports
+import hashlib
 import os
 import pathlib
 import re
@@ -10,6 +11,7 @@ import humanize
 import mergedeep
 import rich
 import rich.console
+import rich.text
 import sh
 import yaml
 
@@ -192,7 +194,7 @@ def get_location_arguments(
     ]
 
 
-def get_tag_arguments(
+def get_deprecated_tag_arguments(
     config: schema.RootBackupConfiguration,
     profile_name: str,
 ) -> list[str]:
@@ -390,3 +392,52 @@ def run_command_politely(
         exit()
 
     return running_proc
+
+
+def octohash(s: str) -> str:
+    return hashlib.sha1(s.encode("utf8")).hexdigest()[:8]
+
+
+def get_profile_identifier(
+    config: schema.RootBackupConfiguration, profile_name: str
+) -> str:
+    profile = get_profile(config, profile_name)
+    return profile.id or octohash(profile_name)
+
+
+def get_profile_identifier_arg(
+    config: schema.RootBackupConfiguration,
+    profile_name: str,
+) -> list[str]:
+    return ["--tag", get_profile_identifier(config, profile_name)]
+
+
+def get_profile_identifier_with_tags_arg(
+    config: schema.RootBackupConfiguration,
+    profile_name: str,
+) -> list[str]:
+    """Combines the identifier with custom tags. Used when creating a new snapshot."""
+    profile = get_profile(config, profile_name)
+    return [
+        "--tag",
+        ",".join(
+            [
+                get_profile_identifier(config, profile_name),
+                *(profile.tags or []),
+            ]
+        ),
+    ]
+
+
+def rich_profile_insert(
+    config: schema.RootBackupConfiguration,
+    profile_name: str,
+) -> rich.text.Text:
+    return rich.text.Text.assemble(
+        rich.text.Text(profile_name),
+        " (",
+        rich.text.Text(
+            get_profile_identifier(config, profile_name), style="blue"
+        ),
+        ")",
+    )

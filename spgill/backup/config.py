@@ -7,7 +7,7 @@ import yaml
 # Local imports
 from . import helper, schema
 
-CURRENT_CONFIG_VERSION = 4
+CURRENT_CONFIG_VERSION = 5
 
 # Default configuration file path exists in the user's home dir
 default_config_path = pathlib.Path("~/.spgill.backup.yaml")
