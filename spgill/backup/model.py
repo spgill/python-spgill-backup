@@ -10,7 +10,6 @@ class BackupLocation(pydantic.BaseModel):
     password_file: typing.Optional[str] = None
     password_command: typing.Optional[str] = None
     env: typing.Optional[dict[str, str]] = None
-    clean_env: typing.Optional[dict[str, str]] = None
 
 
 class BackupRetention(pydantic.BaseModel):

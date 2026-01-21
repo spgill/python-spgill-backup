@@ -344,7 +344,7 @@ def app_command(
 
     # We need to convert any environment vars to key=value pairs
     env_args = []
-    if location_env := (location.env or location.clean_env):
+    if location_env := location.env:
         env_args.append("env")
         for key, value in location_env.items():
             env_args.append(f"{key}={value}")

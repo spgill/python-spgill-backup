@@ -208,10 +208,6 @@ def get_execution_env(
 ) -> dict[str, str]:
     location = get_location(config, location_name)
 
-    # If "clean_env" property is used, we will start with a clean environment
-    if location.clean_env is not None:
-        return location.clean_env
-
     # Else, we will augment the execution environment with the "env" property (if defined)
     return {**dict(os.environ), **(location.env or {})}
 
@@ -231,10 +227,10 @@ def validate_two_repo_operation(
     # Next we check that the two location's environment vars don't overlap.
     # This is a limitation of restic's implementation of S3/B2/etc.
     location_a = get_location(config, location_a_name)
-    location_a_env = location_a.clean_env or location_a.env or {}
+    location_a_env = location_a.env or {}
 
     location_b = get_location(config, location_b_name)
-    location_b_env = location_b.clean_env or location_b.env or {}
+    location_b_env = location_b.env or {}
 
     intersection = [k for k in location_a_env if k in location_b_env]
     if len(intersection) > 0:
